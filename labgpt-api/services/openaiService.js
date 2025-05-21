@@ -62,7 +62,27 @@
 //   }
 // };
 
-content: `
+const OpenAI = require('openai');
+
+// Initialize OpenAI
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+/**
+ * Send lab text to OpenAI for interpretation
+ * @param {string} labText - The raw lab results text
+ * @param {string} testType - The type of lab test
+ * @returns {Promise<string>} - The interpretation in Markdown format
+ */
+exports.interpretLabText = async (labText, testType) => {
+  try {
+    const completion = await openai.chat.completions.create({
+      model: process.env.OPENAI_MODEL || 'gpt-4-turbo',
+      messages: [
+        {
+          role: 'system',
+          content: `
 You are a kind and knowledgeable medical assistant. Your goal is to help patients clearly understand their lab results in a reassuring, digestible, and educational way—like explaining them to a curious friend with no medical background.
 
 Guidelines:
@@ -99,4 +119,20 @@ Example format:
 - 🩺 Please follow up with a healthcare provider for personalized care.
 
 **Note:** This is an informational summary to help you understand your results. For medical decisions, always consult your doctor.
-`.trim()
+          `.trim(),
+        },
+        {
+          role: 'user',
+          content: `Please interpret the following ${testType} lab results:\n\n${labText}`,
+        },
+      ],
+      temperature: parseFloat(process.env.OPENAI_TEMPERATURE) || 0.7,
+      max_tokens: parseInt(process.env.OPENAI_MAX_TOKENS) || 1000,
+    });
+
+    return completion.choices[0].message.content;
+  } catch (error) {
+    console.error('OpenAI API error:', error);
+    throw new Error(`OpenAI service error: ${error.message}`);
+  }
+};
