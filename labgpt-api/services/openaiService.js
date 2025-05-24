@@ -62,6 +62,80 @@
 //   }
 // };
 
+// const OpenAI = require('openai');
+
+// // Initialize OpenAI
+// const openai = new OpenAI({
+//   apiKey: process.env.OPENAI_API_KEY,
+// });
+
+// /**
+//  * Send lab text to OpenAI for interpretation
+//  * @param {string} labText - The raw lab results text
+//  * @param {string} testType - The type of lab test
+//  * @returns {Promise<string>} - The interpretation in Markdown format
+//  */
+// exports.interpretLabText = async (labText, testType) => {
+//   try {
+//     const completion = await openai.chat.completions.create({
+//       model: process.env.OPENAI_MODEL || 'gpt-4-turbo',
+//       messages: [
+//         {
+//           role: 'system',
+//           content: `
+// You are a kind and knowledgeable medical assistant. Your goal is to help patients clearly understand their lab results in a reassuring, digestible, and educational way—like explaining them to a curious friend with no medical background.
+
+// Guidelines:
+// - Format your response in **Markdown**, suitable for a mobile app.
+// - Use **clear section headings** (e.g., ## Red Blood Cells, ## Liver Function Tests).
+// - Use **bullet points** for individual test items under each section.
+// - For each test:
+//   - Show the result (and mark **Low**, **High**, or **Normal** where appropriate).
+//   - Use **bold** for any abnormal result and explain what it might mean in simple, everyday language.
+//   - Use relatable analogies or explanations when helpful (e.g., "hemoglobin is like the oxygen-carrying part of your blood").
+//   - Explain why the result might be important for health.
+//   - Suggest **general next steps** (e.g., consult a doctor, stay hydrated, consider diet/exercise adjustments).
+// - Include a brief "**Summary**" section at the end with:
+//   - Key concerns to be aware of
+//   - Gentle reminders to follow up if anything is abnormal
+// - Do **not** give exact diagnoses or treatment plans.
+// - Be supportive and reassuring. Avoid alarmist language.
+// - Always remind the patient to consult a healthcare provider for personalized medical advice.
+
+// Example format:
+
+// ## Red Blood Cells
+// - **Hemoglobin: 9.2 g/dL (Low)**  
+//   Hemoglobin helps carry oxygen in your blood. A low level may mean you're anemic, which can cause tiredness or shortness of breath.  
+//   **Next steps:** Consider seeing a doctor for possible iron or vitamin deficiencies, or other causes.
+
+// ## White Blood Cells
+// - WBC: 6.1 x10³/µL (Normal)  
+//   This is within the healthy range and suggests your immune system is working normally.
+
+// ## Summary
+// - ⚠️ Low hemoglobin may suggest anemia. A doctor can help determine the cause.
+// - ✅ Most other values are within the normal range.
+// - 🩺 Please follow up with a healthcare provider for personalized care.
+
+// **Note:** This is an informational summary to help you understand your results. For medical decisions, always consult your doctor.
+//           `.trim(),
+//         },
+//         {
+//           role: 'user',
+//           content: `Please interpret the following ${testType} lab results:\n\n${labText}`,
+//         },
+//       ],
+//       temperature: parseFloat(process.env.OPENAI_TEMPERATURE) || 0.7,
+//       max_tokens: parseInt(process.env.OPENAI_MAX_TOKENS) || 1000,
+//     });
+
+//     return completion.choices[0].message.content;
+//   } catch (error) {
+//     console.error('OpenAI API error:', error);
+//     throw new Error(`OpenAI service error: ${error.message}`);
+//   }
+// };
 const OpenAI = require('openai');
 
 // Initialize OpenAI
@@ -70,12 +144,11 @@ const openai = new OpenAI({
 });
 
 /**
- * Send lab text to OpenAI for interpretation
+ * Send lab text to OpenAI for interpretation and test type extraction
  * @param {string} labText - The raw lab results text
- * @param {string} testType - The type of lab test
- * @returns {Promise<string>} - The interpretation in Markdown format
+ * @returns {Promise<{ testType: string, interpretation: string }>}
  */
-exports.interpretLabText = async (labText, testType) => {
+exports.interpretLabText = async (labText) => {
   try {
     const completion = await openai.chat.completions.create({
       model: process.env.OPENAI_MODEL || 'gpt-4-turbo',
@@ -83,54 +156,62 @@ exports.interpretLabText = async (labText, testType) => {
         {
           role: 'system',
           content: `
-You are a kind and knowledgeable medical assistant. Your goal is to help patients clearly understand their lab results in a reassuring, digestible, and educational way—like explaining them to a curious friend with no medical background.
+You are a kind and knowledgeable medical assistant. Your goal is to help patients clearly understand their lab results in a reassuring, digestible, and educational way.
 
-Guidelines:
-- Format your response in **Markdown**, suitable for a mobile app.
-- Use **clear section headings** (e.g., ## Red Blood Cells, ## Liver Function Tests).
-- Use **bullet points** for individual test items under each section.
-- For each test:
-  - Show the result (and mark **Low**, **High**, or **Normal** where appropriate).
-  - Use **bold** for any abnormal result and explain what it might mean in simple, everyday language.
-  - Use relatable analogies or explanations when helpful (e.g., "hemoglobin is like the oxygen-carrying part of your blood").
-  - Explain why the result might be important for health.
-  - Suggest **general next steps** (e.g., consult a doctor, stay hydrated, consider diet/exercise adjustments).
-- Include a brief "**Summary**" section at the end with:
-  - Key concerns to be aware of
-  - Gentle reminders to follow up if anything is abnormal
-- Do **not** give exact diagnoses or treatment plans.
-- Be supportive and reassuring. Avoid alarmist language.
-- Always remind the patient to consult a healthcare provider for personalized medical advice.
+**Instructions:**
+1. At the top of your response, return a JSON block like this:
 
-Example format:
+\`\`\`json
+{
+  "testType": "Complete Blood Count (CBC)"
+}
+\`\`\`
 
-## Red Blood Cells
-- **Hemoglobin: 9.2 g/dL (Low)**  
-  Hemoglobin helps carry oxygen in your blood. A low level may mean you're anemic, which can cause tiredness or shortness of breath.  
-  **Next steps:** Consider seeing a doctor for possible iron or vitamin deficiencies, or other causes.
+2. Below that, explain the results in **Markdown format** suitable for a mobile app.
 
-## White Blood Cells
-- WBC: 6.1 x10³/µL (Normal)  
-  This is within the healthy range and suggests your immune system is working normally.
-
-## Summary
-- ⚠️ Low hemoglobin may suggest anemia. A doctor can help determine the cause.
-- ✅ Most other values are within the normal range.
-- 🩺 Please follow up with a healthcare provider for personalized care.
-
-**Note:** This is an informational summary to help you understand your results. For medical decisions, always consult your doctor.
+**Markdown Guidelines:**
+- Use clear section headings (## Red Blood Cells, etc.)
+- Use bullet points for each result
+- Mark abnormal values (**High**, **Low**) and explain them in plain language
+- Use analogies when helpful
+- Include a helpful ## Summary at the end:
+  - ⚠️ Concerns
+  - ✅ Good news
+  - 🩺 Next steps
+- Be supportive, avoid alarming language
+- End with: “Always consult your doctor for personalized medical advice.”
           `.trim(),
         },
         {
           role: 'user',
-          content: `Please interpret the following ${testType} lab results:\n\n${labText}`,
+          content: `Please interpret the following lab results:\n\n${labText}`,
         },
       ],
       temperature: parseFloat(process.env.OPENAI_TEMPERATURE) || 0.7,
       max_tokens: parseInt(process.env.OPENAI_MAX_TOKENS) || 1000,
     });
 
-    return completion.choices[0].message.content;
+    const rawResponse = completion.choices[0].message.content;
+
+    // Extract testType from the JSON block
+    const jsonMatch = rawResponse.match(/```json\s*({[\s\S]*?})\s*```/);
+    let testType = 'Unknown';
+
+    if (jsonMatch) {
+      try {
+        const parsedJson = JSON.parse(jsonMatch[1]);
+        if (parsedJson.testType) {
+          testType = parsedJson.testType;
+        }
+      } catch (err) {
+        console.error('Failed to parse testType JSON:', err.message);
+      }
+    }
+
+    // Remove the JSON block from the interpretation text
+    const interpretation = rawResponse.replace(/```json[\s\S]*?```/, '').trim();
+
+    return { testType, interpretation };
   } catch (error) {
     console.error('OpenAI API error:', error);
     throw new Error(`OpenAI service error: ${error.message}`);

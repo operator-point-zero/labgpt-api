@@ -266,56 +266,141 @@
 //   }
 // };
 
+// const crypto = require('crypto');
+// const { interpretLabText } = require('../services/openaiService');
+
+// // Simple decrypt function using XOR
+// function decrypt(encryptedData, key) {
+//   try {
+//     const encryptedBytes = Buffer.from(encryptedData, 'base64');
+//     const keyBytes = Buffer.from(key, 'utf8');
+//     const decrypted = [];
+    
+//     for (let i = 0; i < encryptedBytes.length; i++) {
+//       decrypted.push(encryptedBytes[i] ^ keyBytes[i % keyBytes.length]);
+//     }
+    
+//     return Buffer.from(decrypted).toString('utf8');
+//   } catch (error) {
+//     throw new Error(`Decryption failed: ${error.message}`);
+//   }
+// }
+
+// // Simple encrypt function using XOR
+// function encrypt(text, key) {
+//   const textBytes = Buffer.from(text, 'utf8');
+//   const keyBytes = Buffer.from(key, 'utf8');
+//   const encrypted = [];
+  
+//   for (let i = 0; i < textBytes.length; i++) {
+//     encrypted.push(textBytes[i] ^ keyBytes[i % keyBytes.length]);
+//   }
+  
+//   return Buffer.from(encrypted).toString('base64');
+// }
+
+// /**
+//  * Process and interpret lab results with encryption
+//  */
+// exports.interpretLabResults = async (req, res) => {
+//   try {
+//     const { encryptedLabText, encryptionKey, testType } = req.body;
+
+//     // Input validation
+//     if (!encryptedLabText || !encryptionKey) {
+//       return res.status(400).json({ error: 'Missing encryption data' });
+//     }
+
+//     if (!testType || typeof testType !== 'string' || !testType.trim()) {
+//       return res.status(400).json({ error: 'Valid testType is required.' });
+//     }
+
+//     // Decrypt the lab text
+//     let labText;
+//     try {
+//       labText = decrypt(encryptedLabText, encryptionKey);
+//     } catch (decryptError) {
+//       console.error('Decryption error:', decryptError);
+//       return res.status(400).json({ error: 'Failed to decrypt data' });
+//     }
+
+//     // Get the interpretation from OpenAI
+//     let interpretation;
+//     try {
+//       interpretation = await interpretLabText(labText.trim(), testType.trim());
+//     } catch (aiError) {
+//       console.error('Error from OpenAI service:', aiError);
+//       return res.status(502).json({
+//         error: 'Interpretation service failed',
+//         message: aiError.message || 'Unknown error from AI service',
+//       });
+//     }
+
+//     // Encrypt the response
+//     const encryptedResponse = encrypt(interpretation, encryptionKey);
+
+//     // Success response
+//     res.status(200).json({
+//       testType,
+//       encryptedInterpretation: encryptedResponse,
+//       timestamp: req.requestTimestamp || new Date().toISOString(),
+//     });
+
+//   } catch (error) {
+//     // Catch-all for unexpected issues
+//     console.error('Unexpected error interpreting lab results:', error);
+//     res.status(500).json({
+//       error: 'Internal server error',
+//       message: error.message || 'An unexpected error occurred'
+//     });
+//   }
+// };
+
 const crypto = require('crypto');
 const { interpretLabText } = require('../services/openaiService');
 
-// Simple decrypt function using XOR
+// XOR decrypt function
 function decrypt(encryptedData, key) {
   try {
     const encryptedBytes = Buffer.from(encryptedData, 'base64');
     const keyBytes = Buffer.from(key, 'utf8');
     const decrypted = [];
-    
+
     for (let i = 0; i < encryptedBytes.length; i++) {
       decrypted.push(encryptedBytes[i] ^ keyBytes[i % keyBytes.length]);
     }
-    
+
     return Buffer.from(decrypted).toString('utf8');
   } catch (error) {
     throw new Error(`Decryption failed: ${error.message}`);
   }
 }
 
-// Simple encrypt function using XOR
+// XOR encrypt function
 function encrypt(text, key) {
   const textBytes = Buffer.from(text, 'utf8');
   const keyBytes = Buffer.from(key, 'utf8');
   const encrypted = [];
-  
+
   for (let i = 0; i < textBytes.length; i++) {
     encrypted.push(textBytes[i] ^ keyBytes[i % keyBytes.length]);
   }
-  
+
   return Buffer.from(encrypted).toString('base64');
 }
 
 /**
- * Process and interpret lab results with encryption
+ * Controller to process and interpret lab results
  */
 exports.interpretLabResults = async (req, res) => {
   try {
-    const { encryptedLabText, encryptionKey, testType } = req.body;
+    const { encryptedLabText, encryptionKey } = req.body;
 
-    // Input validation
     if (!encryptedLabText || !encryptionKey) {
       return res.status(400).json({ error: 'Missing encryption data' });
     }
 
-    if (!testType || typeof testType !== 'string' || !testType.trim()) {
-      return res.status(400).json({ error: 'Valid testType is required.' });
-    }
-
-    // Decrypt the lab text
+    // Decrypt lab text
     let labText;
     try {
       labText = decrypt(encryptedLabText, encryptionKey);
@@ -324,10 +409,12 @@ exports.interpretLabResults = async (req, res) => {
       return res.status(400).json({ error: 'Failed to decrypt data' });
     }
 
-    // Get the interpretation from OpenAI
-    let interpretation;
+    // Interpret lab text with OpenAI
+    let testType, interpretation;
     try {
-      interpretation = await interpretLabText(labText.trim(), testType.trim());
+      const result = await interpretLabText(labText.trim());
+      testType = result.testType;
+      interpretation = result.interpretation;
     } catch (aiError) {
       console.error('Error from OpenAI service:', aiError);
       return res.status(502).json({
@@ -336,10 +423,10 @@ exports.interpretLabResults = async (req, res) => {
       });
     }
 
-    // Encrypt the response
+    // Encrypt the interpretation
     const encryptedResponse = encrypt(interpretation, encryptionKey);
 
-    // Success response
+    // Return response
     res.status(200).json({
       testType,
       encryptedInterpretation: encryptedResponse,
@@ -347,7 +434,6 @@ exports.interpretLabResults = async (req, res) => {
     });
 
   } catch (error) {
-    // Catch-all for unexpected issues
     console.error('Unexpected error interpreting lab results:', error);
     res.status(500).json({
       error: 'Internal server error',
