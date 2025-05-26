@@ -441,6 +441,123 @@
 //     });
 //   }
 // };
+// const crypto = require('crypto');
+// const { interpretLabText } = require('../services/openaiService');
+
+// // AES-256-GCM encryption function
+// function encrypt(text, password) {
+//   try {
+//     // Generate a random salt and IV
+//     const salt = crypto.randomBytes(32);
+//     const iv = crypto.randomBytes(16);
+    
+//     // Derive key from password using PBKDF2
+//     const key = crypto.pbkdf2Sync(password, salt, 100000, 32, 'sha256');
+    
+//     // Create cipher
+//     const cipher = crypto.createCipher('aes-256-gcm', key);
+//     cipher.setAAD(Buffer.from('lab-data')); // Additional authenticated data
+    
+//     // Encrypt
+//     let encrypted = cipher.update(text, 'utf8');
+//     encrypted = Buffer.concat([encrypted, cipher.final()]);
+    
+//     // Get authentication tag
+//     const authTag = cipher.getAuthTag();
+    
+//     // Combine salt + iv + authTag + encrypted data
+//     const result = Buffer.concat([salt, iv, authTag, encrypted]);
+    
+//     return result.toString('base64');
+//   } catch (error) {
+//     throw new Error(`Encryption failed: ${error.message}`);
+//   }
+// }
+
+// // AES-256-GCM decryption function
+// function decrypt(encryptedData, password) {
+//   try {
+//     const data = Buffer.from(encryptedData, 'base64');
+    
+//     // Extract components
+//     const salt = data.subarray(0, 32);
+//     const iv = data.subarray(32, 48);
+//     const authTag = data.subarray(48, 64);
+//     const encrypted = data.subarray(64);
+    
+//     // Derive key from password
+//     const key = crypto.pbkdf2Sync(password, salt, 100000, 32, 'sha256');
+    
+//     // Create decipher
+//     const decipher = crypto.createDecipher('aes-256-gcm', key);
+//     decipher.setAAD(Buffer.from('lab-data'));
+//     decipher.setAuthTag(authTag);
+    
+//     // Decrypt
+//     let decrypted = decipher.update(encrypted);
+//     decrypted = Buffer.concat([decrypted, decipher.final()]);
+    
+//     return decrypted.toString('utf8');
+//   } catch (error) {
+//     throw new Error(`Decryption failed: ${error.message}`);
+//   }
+// }
+
+// /**
+//  * Controller to process and interpret lab results
+//  */
+// exports.interpretLabResults = async (req, res) => {
+//   try {
+//     const { encryptedLabText, clientId } = req.body;
+    
+//     if (!encryptedLabText || !clientId) {
+//       return res.status(400).json({ error: 'Missing required data' });
+//     }
+    
+//     // Use clientId as password (in production, derive from secure session)
+//     const password = clientId;
+    
+//     // Decrypt lab text
+//     let labText;
+//     try {
+//       labText = decrypt(encryptedLabText, password);
+//     } catch (decryptError) {
+//       console.error('Decryption error:', decryptError);
+//       return res.status(400).json({ error: 'Failed to decrypt data' });
+//     }
+    
+//     // Interpret lab text with OpenAI
+//     let testType, interpretation;
+//     try {
+//       const result = await interpretLabText(labText.trim());
+//       testType = result.testType;
+//       interpretation = result.interpretation;
+//     } catch (aiError) {
+//       console.error('Error from OpenAI service:', aiError);
+//       return res.status(502).json({
+//         error: 'Interpretation service failed',
+//         message: aiError.message || 'Unknown error from AI service',
+//       });
+//     }
+    
+//     // Encrypt the interpretation
+//     const encryptedResponse = encrypt(interpretation, password);
+    
+//     // Return response
+//     res.status(200).json({
+//       testType,
+//       encryptedInterpretation: encryptedResponse,
+//       timestamp: req.requestTimestamp || new Date().toISOString(),
+//     });
+    
+//   } catch (error) {
+//     console.error('Unexpected error interpreting lab results:', error);
+//     res.status(500).json({
+//       error: 'Internal server error',
+//       message: error.message || 'An unexpected error occurred'
+//     });
+//   }
+// };
 const crypto = require('crypto');
 const { interpretLabText } = require('../services/openaiService');
 
@@ -448,15 +565,15 @@ const { interpretLabText } = require('../services/openaiService');
 function encrypt(text, password) {
   try {
     // Generate a random salt and IV
-    const salt = crypto.randomBytes(32);
-    const iv = crypto.randomBytes(16);
+    const salt = crypto.randomBytes(16);
+    const iv = crypto.randomBytes(12); // GCM uses 12-byte IV
     
     // Derive key from password using PBKDF2
-    const key = crypto.pbkdf2Sync(password, salt, 100000, 32, 'sha256');
+    const key = crypto.pbkdf2Sync(password, salt, 10000, 32, 'sha256');
     
     // Create cipher
     const cipher = crypto.createCipher('aes-256-gcm', key);
-    cipher.setAAD(Buffer.from('lab-data')); // Additional authenticated data
+    cipher.setAAD(Buffer.from(''));
     
     // Encrypt
     let encrypted = cipher.update(text, 'utf8');
@@ -480,17 +597,17 @@ function decrypt(encryptedData, password) {
     const data = Buffer.from(encryptedData, 'base64');
     
     // Extract components
-    const salt = data.subarray(0, 32);
-    const iv = data.subarray(32, 48);
-    const authTag = data.subarray(48, 64);
-    const encrypted = data.subarray(64);
+    const salt = data.subarray(0, 16);
+    const iv = data.subarray(16, 28);
+    const authTag = data.subarray(28, 44);
+    const encrypted = data.subarray(44);
     
     // Derive key from password
-    const key = crypto.pbkdf2Sync(password, salt, 100000, 32, 'sha256');
+    const key = crypto.pbkdf2Sync(password, salt, 10000, 32, 'sha256');
     
     // Create decipher
     const decipher = crypto.createDecipher('aes-256-gcm', key);
-    decipher.setAAD(Buffer.from('lab-data'));
+    decipher.setAAD(Buffer.from(''));
     decipher.setAuthTag(authTag);
     
     // Decrypt
@@ -514,16 +631,20 @@ exports.interpretLabResults = async (req, res) => {
       return res.status(400).json({ error: 'Missing required data' });
     }
     
-    // Use clientId as password (in production, derive from secure session)
-    const password = clientId;
+    console.log('Received clientId:', clientId);
+    console.log('Received encrypted data length:', encryptedLabText.length);
     
     // Decrypt lab text
     let labText;
     try {
-      labText = decrypt(encryptedLabText, password);
+      labText = decrypt(encryptedLabText, clientId);
+      console.log('Decryption successful, text length:', labText.length);
     } catch (decryptError) {
-      console.error('Decryption error:', decryptError);
-      return res.status(400).json({ error: 'Failed to decrypt data' });
+      console.error('Decryption error:', decryptError.message);
+      return res.status(400).json({ 
+        error: 'Failed to decrypt data',
+        details: decryptError.message 
+      });
     }
     
     // Interpret lab text with OpenAI
@@ -541,7 +662,7 @@ exports.interpretLabResults = async (req, res) => {
     }
     
     // Encrypt the interpretation
-    const encryptedResponse = encrypt(interpretation, password);
+    const encryptedResponse = encrypt(interpretation, clientId);
     
     // Return response
     res.status(200).json({
