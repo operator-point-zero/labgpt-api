@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const User = require('../models/User');
+const User = require('../models/user');
 
 // POST /api/auth/oauth
 router.post('/oauth', async (req, res) => {
