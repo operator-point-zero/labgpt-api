@@ -1,3 +1,4 @@
+
 // const OpenAI = require('openai');
 
 // // Initialize OpenAI
@@ -8,7 +9,7 @@
 // /**
 //  * Send lab text to OpenAI for interpretation and test type extraction
 //  * @param {string} labText - The raw lab results text
-//  * @returns {Promise<{ testType: string, interpretation: string }>}
+//  * @returns {Promise<{ testType: string, interpretation: string, isValidTest: boolean }>}
 //  */
 // exports.interpretLabText = async (labText) => {
 //   try {
@@ -18,49 +19,75 @@
 //         {
 //           role: 'system',
 //           content: `
-// You are a kind and knowledgeable medical assistant. Your goal is to help patients clearly understand their lab results in a reassuring, digestible, and educational way.
+// You are a medical assistant that analyzes lab results. Your primary task is to determine if the provided text contains valid medical lab test results.
 
-// ⚠️ DO NOT rely on any test type label the user may provide.  
-// ✅ INFER the test type strictly from the actual lab result content.
+// **Critical Instructions:**
+// 1. First, determine if this is actually a lab test result by looking for:
+//    - Medical test names (CBC, LFT, glucose, cholesterol, etc.)
+//    - Numerical values with units (mg/dL, mmol/L, etc.)
+//    - Reference ranges
+//    - Medical terminology
+//    - Laboratory headers/formats
 
-// **Instructions:**
-// 1. At the top of your response, return a JSON block like this:
+// 2. At the top of your response, return a JSON block like this:
 
+// For VALID lab tests:
 // \`\`\`json
 // {
-//   "testType": "Complete Blood Count (CBC)"
+//   "testType": "Complete Blood Count (CBC)",
+//   "isValidTest": true
 // }
 // \`\`\`
 
-// 2. Below that, explain the results in **Markdown format** suitable for a mobile app.
+// For INVALID/NON-TEST content (receipts, random text, photos without lab data, etc.):
+// \`\`\`json
+// {
+//   "testType": "Unknown",
+//   "isValidTest": false
+// }
+// \`\`\`
 
-// **Markdown Guidelines:**
-// - Use clear section headings (## Red Blood Cells, etc.)
-// - Use bullet points for each result
-// - Mark abnormal values (**High**, **Low**) and explain them in plain language
-// - Use analogies when helpful
-// - Include a helpful ## Summary at the end:
-//   - ⚠️ Concerns
-//   - ✅ Good news
-//   - 🩺 Next steps
-// - Be supportive, avoid alarming language
-// - End with: “Always consult your doctor for personalized medical advice.”
+// 3. If isValidTest is true, provide a detailed interpretation in Markdown format.
+// 4. If isValidTest is false, provide a brief explanation of why this isn't a lab test.
+
+// **Valid Test Types Include:**
+// - Complete Blood Count (CBC)
+// - Liver Function Tests (LFT) 
+// - Kidney Function Tests (KFT/UEC)
+// - Lipid Profile
+// - Blood Glucose Tests
+// - Thyroid Function Tests
+// - Urinalysis
+// - Electrolyte Panel
+// - Cardiac Markers
+// - Hemoglobin A1C
+// - Vitamin D
+// - Iron Studies
+// - And other standard medical laboratory tests
+
+// **Invalid Content Includes:**
+// - Receipts or bills
+// - Random text or documents
+// - Images without clear lab values
+// - Incomplete or unclear text
+// - Non-medical content
 //           `.trim(),
 //         },
 //         {
 //           role: 'user',
-//           content: `Please interpret the following lab results. Ignore any test type labels. Use only the values themselves to determine what kind of test this is:\n\n${labText}`,
+//           content: `Analyze the following text and determine if it contains valid lab test results:\n\n${labText}`,
 //         },
 //       ],
-//       temperature: parseFloat(process.env.OPENAI_TEMPERATURE) || 0.7,
+//       temperature: parseFloat(process.env.OPENAI_TEMPERATURE) || 0.3,
 //       max_tokens: parseInt(process.env.OPENAI_MAX_TOKENS) || 1000,
 //     });
 
 //     const rawResponse = completion.choices[0].message.content;
 
-//     // Extract testType from the JSON block
+//     // Extract testType and isValidTest from the JSON block
 //     const jsonMatch = rawResponse.match(/```json\s*({[\s\S]*?})\s*```/);
 //     let testType = 'Unknown';
+//     let isValidTest = false;
 
 //     if (jsonMatch) {
 //       try {
@@ -68,20 +95,125 @@
 //         if (parsedJson.testType) {
 //           testType = parsedJson.testType;
 //         }
+//         if (parsedJson.hasOwnProperty('isValidTest')) {
+//           isValidTest = parsedJson.isValidTest;
+//         }
 //       } catch (err) {
-//         console.error('Failed to parse testType JSON:', err.message);
+//         console.error('Failed to parse JSON from OpenAI response:', err.message);
 //       }
 //     }
 
 //     // Remove the JSON block from the interpretation text
 //     const interpretation = rawResponse.replace(/```json[\s\S]*?```/, '').trim();
 
-//     return { testType, interpretation };
+//     return { testType, interpretation, isValidTest };
 //   } catch (error) {
 //     console.error('OpenAI API error:', error);
 //     throw new Error(`OpenAI service error: ${error.message}`);
 //   }
 // };
+
+// const OpenAI = require('openai');
+
+// const openai = new OpenAI({
+//   apiKey: process.env.OPENAI_API_KEY,
+// });
+
+// /**
+//  * Analyze medical text (lab results or imaging reports) and provide structured interpretation
+//  * @param {string} medicalText
+//  * @returns {Promise<{ testType: string, interpretation: string, isValidTest: boolean }>}
+//  */
+// exports.interpretMedicalText = async (medicalText) => {
+//   try {
+//     const completion = await openai.chat.completions.create({
+//       model: process.env.OPENAI_MODEL || 'gpt-4-turbo',
+//       messages: [
+//         {
+//           role: 'system',
+//           content: `
+// You are a clinical assistant that interprets both lab results and radiology/imaging reports. Analyze the input text and follow these instructions:
+
+// 1. First, classify the input as one of:
+//    - "Lab Test"
+//    - "Imaging Report"
+//    - "Invalid or Non-Medical"
+
+// 2. Return the classification in a JSON block like this:
+
+// For Lab Test:
+// \`\`\`json
+// {
+//   "testType": "Complete Blood Count (CBC)",
+//   "isValidTest": true
+// }
+// \`\`\`
+
+// For Imaging Report:
+// \`\`\`json
+// {
+//   "testType": "CT Abdomen",
+//   "isValidTest": true
+// }
+// \`\`\`
+
+// For Invalid or Non-Medical content:
+// \`\`\`json
+// {
+//   "testType": "Unknown",
+//   "isValidTest": false
+// }
+// \`\`\`
+
+// 3. If isValidTest is true, provide a clear and helpful interpretation in Markdown format. For imaging reports, explain what the findings mean in layman's terms.
+
+// 4. If isValidTest is false, briefly explain why.
+
+// Examples of Imaging Reports:
+// - CT, MRI, X-ray, Ultrasound, Mammogram
+
+// Examples of Lab Tests:
+// - CBC, LFT, KFT, Lipid Panel, Glucose, Urinalysis, etc.
+//         `.trim(),
+//         },
+//         {
+//           role: 'user',
+//           content: `Analyze the following medical text:\n\n${medicalText}`,
+//         },
+//       ],
+//       temperature: 0.3,
+//       max_tokens: 1200,
+//     });
+
+//     const rawResponse = completion.choices[0].message.content;
+
+//     const jsonMatch = rawResponse.match(/```json\s*({[\s\S]*?})\s*```/);
+//     let testType = 'Unknown';
+//     let isValidTest = false;
+
+//     if (jsonMatch) {
+//       try {
+//         const parsedJson = JSON.parse(jsonMatch[1]);
+//         if (parsedJson.testType) {
+//           testType = parsedJson.testType;
+//         }
+//         if (parsedJson.hasOwnProperty('isValidTest')) {
+//           isValidTest = parsedJson.isValidTest;
+//         }
+//       } catch (err) {
+//         console.error('Failed to parse JSON from OpenAI response:', err.message);
+//       }
+//     }
+
+//     const interpretation = rawResponse.replace(/```json[\s\S]*?```/, '').trim();
+
+//     return { testType, interpretation, isValidTest };
+//   } catch (error) {
+//     console.error('OpenAI API error:', error);
+//     throw new Error(`OpenAI service error: ${error.message}`);
+//   }
+// };
+
 const OpenAI = require('openai');
 
 // Initialize OpenAI
@@ -90,11 +222,11 @@ const openai = new OpenAI({
 });
 
 /**
- * Send lab text to OpenAI for interpretation and test type extraction
- * @param {string} labText - The raw lab results text
+ * Analyze lab or imaging text and return interpretation with type and status
+ * @param {string} medicalText
  * @returns {Promise<{ testType: string, interpretation: string, isValidTest: boolean }>}
  */
-exports.interpretLabText = async (labText) => {
+exports.interpretMedicalText = async (medicalText) => {
   try {
     const completion = await openai.chat.completions.create({
       model: process.env.OPENAI_MODEL || 'gpt-4-turbo',
@@ -102,27 +234,28 @@ exports.interpretLabText = async (labText) => {
         {
           role: 'system',
           content: `
-You are a medical assistant that analyzes lab results. Your primary task is to determine if the provided text contains valid medical lab test results.
+You are a clinical assistant that interprets both **lab test results** and **radiology/imaging reports** for patients. Analyze the input text and follow these instructions carefully:
 
-**Critical Instructions:**
-1. First, determine if this is actually a lab test result by looking for:
-   - Medical test names (CBC, LFT, glucose, cholesterol, etc.)
-   - Numerical values with units (mg/dL, mmol/L, etc.)
-   - Reference ranges
-   - Medical terminology
-   - Laboratory headers/formats
+---
 
-2. At the top of your response, return a JSON block like this:
+### Step 1: Classify the Test
 
-For VALID lab tests:
+Determine the type of medical text:
+- "Lab Test" → Numerical lab values (CBC, LFT, Glucose, etc.)
+- "Imaging Report" → Descriptive reports (CT, MRI, Ultrasound, X-ray, etc.)
+- "Invalid or Non-Medical" → Receipts, bills, unclear or non-medical content
+
+Return this classification at the top in the following JSON block:
+
 \`\`\`json
 {
-  "testType": "Complete Blood Count (CBC)",
+  "testType": "CT Head Without Contrast",
   "isValidTest": true
 }
 \`\`\`
 
-For INVALID/NON-TEST content (receipts, random text, photos without lab data, etc.):
+or if invalid:
+
 \`\`\`json
 {
   "testType": "Unknown",
@@ -130,39 +263,48 @@ For INVALID/NON-TEST content (receipts, random text, photos without lab data, et
 }
 \`\`\`
 
-3. If isValidTest is true, provide a detailed interpretation in Markdown format.
-4. If isValidTest is false, provide a brief explanation of why this isn't a lab test.
+---
 
-**Valid Test Types Include:**
-- Complete Blood Count (CBC)
-- Liver Function Tests (LFT) 
-- Kidney Function Tests (KFT/UEC)
-- Lipid Profile
-- Blood Glucose Tests
-- Thyroid Function Tests
-- Urinalysis
-- Electrolyte Panel
-- Cardiac Markers
-- Hemoglobin A1C
-- Vitamin D
-- Iron Studies
-- And other standard medical laboratory tests
+### Step 2: If isValidTest is true, provide a friendly Markdown interpretation in this format:
 
-**Invalid Content Includes:**
-- Receipts or bills
-- Random text or documents
-- Images without clear lab values
-- Incomplete or unclear text
-- Non-medical content
+## 🧪 Test Summary
+
+- **Test Type:** <Name of test>
+- **Conclusion:** <Brief status — Normal, Abnormal, Further Review Needed>
+
+---
+
+## 🔍 Key Findings
+
+| Parameter / Finding     | Value / Observation     | Reference Range (if any) | Interpretation        |
+|--------------------------|-------------------------|---------------------------|------------------------|
+| Hemoglobin               | 13.5 g/dL               | 13.0 – 17.0 g/dL          | ✅ Normal              |
+| White Blood Cells        | 11.2 x10⁹/L             | 4.0 – 11.0 x10⁹/L         | ⚠️ Slightly Elevated   |
+
+---
+
+## 🧑‍⚕️ What This Means
+
+Explain the result in simple, non-technical language a patient can understand.
+
+---
+
+## 📝 Doctor’s Note (AI-Generated)
+
+> Provide a soft, informative suggestion — e.g., “Consult a doctor if you have symptoms,” or “Follow up may be needed.”
+
+---
+
+### Step 3: If isValidTest is false, explain why the input is not a valid lab or imaging report.
           `.trim(),
         },
         {
           role: 'user',
-          content: `Analyze the following text and determine if it contains valid lab test results:\n\n${labText}`,
+          content: `Analyze the following medical text:\n\n${medicalText}`,
         },
       ],
       temperature: parseFloat(process.env.OPENAI_TEMPERATURE) || 0.3,
-      max_tokens: parseInt(process.env.OPENAI_MAX_TOKENS) || 1000,
+      max_tokens: parseInt(process.env.OPENAI_MAX_TOKENS) || 1200,
     });
 
     const rawResponse = completion.choices[0].message.content;
@@ -175,12 +317,8 @@ For INVALID/NON-TEST content (receipts, random text, photos without lab data, et
     if (jsonMatch) {
       try {
         const parsedJson = JSON.parse(jsonMatch[1]);
-        if (parsedJson.testType) {
-          testType = parsedJson.testType;
-        }
-        if (parsedJson.hasOwnProperty('isValidTest')) {
-          isValidTest = parsedJson.isValidTest;
-        }
+        testType = parsedJson.testType || 'Unknown';
+        isValidTest = !!parsedJson.isValidTest;
       } catch (err) {
         console.error('Failed to parse JSON from OpenAI response:', err.message);
       }
@@ -195,3 +333,4 @@ For INVALID/NON-TEST content (receipts, random text, photos without lab data, et
     throw new Error(`OpenAI service error: ${error.message}`);
   }
 };
+
