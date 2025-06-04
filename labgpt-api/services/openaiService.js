@@ -226,7 +226,7 @@ const openai = new OpenAI({
  * @param {string} medicalText
  * @returns {Promise<{ testType: string, interpretation: string, isValidTest: boolean }>}
  */
-exports.interpretMedicalText = async (medicalText) => {
+exports.interpretLabText = async (medicalText) => {
   try {
     const completion = await openai.chat.completions.create({
       model: process.env.OPENAI_MODEL || 'gpt-4-turbo',
