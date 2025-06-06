@@ -214,6 +214,126 @@
 //   }
 // };
 
+// const OpenAI = require('openai');
+
+// // Initialize OpenAI
+// const openai = new OpenAI({
+//   apiKey: process.env.OPENAI_API_KEY,
+// });
+
+// /**
+//  * Analyze lab or imaging text and return interpretation with type and status
+//  * @param {string} medicalText
+//  * @returns {Promise<{ testType: string, interpretation: string, isValidTest: boolean }>}
+//  */
+// exports.interpretLabText = async (medicalText) => {
+//   try {
+//     const completion = await openai.chat.completions.create({
+//       model: process.env.OPENAI_MODEL || 'gpt-4-turbo',
+//       messages: [
+//         {
+//           role: 'system',
+//           content: `
+// You are a clinical assistant that interprets both **lab test results** and **radiology/imaging reports** for patients. Analyze the input text and follow these instructions carefully:
+
+// ---
+
+// ### Step 1: Classify the Test
+
+// Determine the type of medical text:
+// - "Lab Test" → Numerical lab values (CBC, LFT, Glucose, etc.)
+// - "Imaging Report" → Descriptive reports (CT, MRI, Ultrasound, X-ray, etc.)
+// - "Invalid or Non-Medical" → Receipts, bills, unclear or non-medical content
+
+// Return this classification at the top in the following JSON block:
+
+// \`\`\`json
+// {
+//   "testType": "CT Head Without Contrast",
+//   "isValidTest": true
+// }
+// \`\`\`
+
+// or if invalid:
+
+// \`\`\`json
+// {
+//   "testType": "Unknown",
+//   "isValidTest": false
+// }
+// \`\`\`
+
+// ---
+
+// ### Step 2: If isValidTest is true, provide a friendly Markdown interpretation in this format:
+
+// ## 🧪 Test Summary
+
+// - **Test Type:** <Name of test>
+// - **Conclusion:** <Brief status — Normal, Abnormal, Further Review Needed>
+
+// ---
+
+// ## 🔍 Key Findings
+
+// | Parameter / Finding     | Value / Observation     | Reference Range (if any) | Interpretation        |
+// |--------------------------|-------------------------|---------------------------|------------------------|
+// | Hemoglobin               | 13.5 g/dL               | 13.0 – 17.0 g/dL          | ✅ Normal              |
+// | White Blood Cells        | 11.2 x10⁹/L             | 4.0 – 11.0 x10⁹/L         | ⚠️ Slightly Elevated   |
+
+// ---
+
+// ## 🧑‍⚕️ What This Means
+
+// Explain the result in simple, non-technical language a patient can understand.
+
+// ---
+
+// ## 📝 Doctor’s Note (AI-Generated)
+
+// > Provide a soft, informative suggestion — e.g., “Consult a doctor if you have symptoms,” or “Follow up may be needed.”
+
+// ---
+
+// ### Step 3: If isValidTest is false, explain why the input is not a valid lab or imaging report.
+//           `.trim(),
+//         },
+//         {
+//           role: 'user',
+//           content: `Analyze the following medical text:\n\n${medicalText}`,
+//         },
+//       ],
+//       temperature: parseFloat(process.env.OPENAI_TEMPERATURE) || 0.3,
+//       max_tokens: parseInt(process.env.OPENAI_MAX_TOKENS) || 1200,
+//     });
+
+//     const rawResponse = completion.choices[0].message.content;
+
+//     // Extract testType and isValidTest from the JSON block
+//     const jsonMatch = rawResponse.match(/```json\s*({[\s\S]*?})\s*```/);
+//     let testType = 'Unknown';
+//     let isValidTest = false;
+
+//     if (jsonMatch) {
+//       try {
+//         const parsedJson = JSON.parse(jsonMatch[1]);
+//         testType = parsedJson.testType || 'Unknown';
+//         isValidTest = !!parsedJson.isValidTest;
+//       } catch (err) {
+//         console.error('Failed to parse JSON from OpenAI response:', err.message);
+//       }
+//     }
+
+//     // Remove the JSON block from the interpretation text
+//     const interpretation = rawResponse.replace(/```json[\s\S]*?```/, '').trim();
+
+//     return { testType, interpretation, isValidTest };
+//   } catch (error) {
+//     console.error('OpenAI API error:', error);
+//     throw new Error(`OpenAI service error: ${error.message}`);
+//   }
+// };
+
 const OpenAI = require('openai');
 
 // Initialize OpenAI
@@ -234,7 +354,9 @@ exports.interpretLabText = async (medicalText) => {
         {
           role: 'system',
           content: `
-You are a clinical assistant that interprets both **lab test results** and **radiology/imaging reports** for patients. Analyze the input text and follow these instructions carefully:
+You are a clinical assistant that interprets both **lab test results** and **radiology/imaging reports** for patients. Analyze the input text and follow these instructions carefully.
+
+⚠️ If for any reason the input text contains patient-identifiable information (names, dates of birth, patient IDs, addresses, etc.), DO NOT include it in the response. Instead, redact it or ignore it entirely.
 
 ---
 
@@ -333,4 +455,3 @@ Explain the result in simple, non-technical language a patient can understand.
     throw new Error(`OpenAI service error: ${error.message}`);
   }
 };
-
