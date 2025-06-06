@@ -334,6 +334,127 @@
 //   }
 // };
 
+// const OpenAI = require('openai');
+
+// // Initialize OpenAI
+// const openai = new OpenAI({
+//   apiKey: process.env.OPENAI_API_KEY,
+// });
+
+// /**
+//  * Analyze lab or imaging text and return interpretation with type and status
+//  * @param {string} medicalText
+//  * @returns {Promise<{ testType: string, interpretation: string, isValidTest: boolean }>}
+//  */
+// exports.interpretLabText = async (medicalText) => {
+//   try {
+//     const completion = await openai.chat.completions.create({
+//       model: process.env.OPENAI_MODEL || 'gpt-4-turbo',
+//       messages: [
+//         {
+//           role: 'system',
+//           content: `
+// You are a clinical assistant that interprets both **lab test results** and **radiology/imaging reports** for patients. Analyze the input text and follow these instructions carefully.
+
+// ⚠️ If for any reason the input text contains patient-identifiable information (names, dates of birth, patient IDs, addresses, etc.), DO NOT include it in the response. Instead, redact it or ignore it entirely.
+
+// ---
+
+// ### Step 1: Classify the Test
+
+// Determine the type of medical text:
+// - "Lab Test" → Numerical lab values (CBC, LFT, Glucose, etc.)
+// - "Imaging Report" → Descriptive reports (CT, MRI, Ultrasound, X-ray, etc.)
+// - "Invalid or Non-Medical" → Receipts, bills, unclear or non-medical content
+
+// Return this classification at the top in the following JSON block:
+
+// \`\`\`json
+// {
+//   "testType": "CT Head Without Contrast",
+//   "isValidTest": true
+// }
+// \`\`\`
+
+// or if invalid:
+
+// \`\`\`json
+// {
+//   "testType": "Unknown",
+//   "isValidTest": false
+// }
+// \`\`\`
+
+// ---
+
+// ### Step 2: If isValidTest is true, provide a friendly Markdown interpretation in this format:
+
+// ## 🧪 Test Summary
+
+// - **Test Type:** <Name of test>
+// - **Conclusion:** <Brief status — Normal, Abnormal, Further Review Needed>
+
+// ---
+
+// ## 🔍 Key Findings
+
+// | Parameter / Finding     | Value / Observation     | Reference Range (if any) | Interpretation        |
+// |--------------------------|-------------------------|---------------------------|------------------------|
+// | Hemoglobin               | 13.5 g/dL               | 13.0 – 17.0 g/dL          | ✅ Normal              |
+// | White Blood Cells        | 11.2 x10⁹/L             | 4.0 – 11.0 x10⁹/L         | ⚠️ Slightly Elevated   |
+
+// ---
+
+// ## 🧑‍⚕️ What This Means
+
+// Explain the result in simple, non-technical language a patient can understand.
+
+// ---
+
+// ## 📝 Doctor’s Note (AI-Generated)
+
+// > Provide a soft, informative suggestion — e.g., “Consult a doctor if you have symptoms,” or “Follow up may be needed.”
+
+// ---
+
+// ### Step 3: If isValidTest is false, explain why the input is not a valid lab or imaging report.
+//           `.trim(),
+//         },
+//         {
+//           role: 'user',
+//           content: `Analyze the following medical text:\n\n${medicalText}`,
+//         },
+//       ],
+//       temperature: parseFloat(process.env.OPENAI_TEMPERATURE) || 0.3,
+//       max_tokens: parseInt(process.env.OPENAI_MAX_TOKENS) || 1200,
+//     });
+
+//     const rawResponse = completion.choices[0].message.content;
+
+//     // Extract testType and isValidTest from the JSON block
+//     const jsonMatch = rawResponse.match(/```json\s*({[\s\S]*?})\s*```/);
+//     let testType = 'Unknown';
+//     let isValidTest = false;
+
+//     if (jsonMatch) {
+//       try {
+//         const parsedJson = JSON.parse(jsonMatch[1]);
+//         testType = parsedJson.testType || 'Unknown';
+//         isValidTest = !!parsedJson.isValidTest;
+//       } catch (err) {
+//         console.error('Failed to parse JSON from OpenAI response:', err.message);
+//       }
+//     }
+
+//     // Remove the JSON block from the interpretation text
+//     const interpretation = rawResponse.replace(/```json[\s\S]*?```/, '').trim();
+
+//     return { testType, interpretation, isValidTest };
+//   } catch (error) {
+//     console.error('OpenAI API error:', error);
+//     throw new Error(`OpenAI service error: ${error.message}`);
+//   }
+// };
 const OpenAI = require('openai');
 
 // Initialize OpenAI
@@ -342,7 +463,7 @@ const openai = new OpenAI({
 });
 
 /**
- * Analyze lab or imaging text and return interpretation with type and status
+ * Analyze lab or diagnostic report text and return interpretation
  * @param {string} medicalText
  * @returns {Promise<{ testType: string, interpretation: string, isValidTest: boolean }>}
  */
@@ -354,29 +475,31 @@ exports.interpretLabText = async (medicalText) => {
         {
           role: 'system',
           content: `
-You are a clinical assistant that interprets both **lab test results** and **radiology/imaging reports** for patients. Analyze the input text and follow these instructions carefully.
+You are a clinical assistant that interprets diagnostic medical texts — including **lab results**, **imaging**, **histology**, **ECG**, **endoscopy**, and other **narrative reports** — for patients in friendly, clear language.
 
-⚠️ If for any reason the input text contains patient-identifiable information (names, dates of birth, patient IDs, addresses, etc.), DO NOT include it in the response. Instead, redact it or ignore it entirely.
+---
+
+⚠️ **If the input text contains patient-identifiable information** (name, date of birth, ID, location, etc.), DO NOT include it in the response. Redact it or omit it entirely.
 
 ---
 
 ### Step 1: Classify the Test
 
-Determine the type of medical text:
-- "Lab Test" → Numerical lab values (CBC, LFT, Glucose, etc.)
-- "Imaging Report" → Descriptive reports (CT, MRI, Ultrasound, X-ray, etc.)
-- "Invalid or Non-Medical" → Receipts, bills, unclear or non-medical content
+Classify the type of report based on the content:
+- "Structured Lab Test" → Mostly tabular or numeric (e.g. CBC, CMP, lipid panel)
+- "Narrative Report" → Descriptive/free-text (e.g. imaging, pathology, ECG)
+- "Invalid or Non-Medical" → Receipts, bills, notes, unclear content
 
-Return this classification at the top in the following JSON block:
+Return this at the top in a JSON block:
 
 \`\`\`json
 {
-  "testType": "CT Head Without Contrast",
+  "testType": "Echocardiogram Report",
   "isValidTest": true
 }
 \`\`\`
 
-or if invalid:
+or:
 
 \`\`\`json
 {
@@ -387,12 +510,15 @@ or if invalid:
 
 ---
 
-### Step 2: If isValidTest is true, provide a friendly Markdown interpretation in this format:
+### Step 2: If isValidTest is true, choose the format based on test type:
+
+---
+
+#### 📊 For **Structured Lab Tests**, use:
 
 ## 🧪 Test Summary
-
-- **Test Type:** <Name of test>
-- **Conclusion:** <Brief status — Normal, Abnormal, Further Review Needed>
+- **Test Type:** <test name>
+- **Conclusion:** <Normal / Abnormal / Review Needed>
 
 ---
 
@@ -401,23 +527,47 @@ or if invalid:
 | Parameter / Finding     | Value / Observation     | Reference Range (if any) | Interpretation        |
 |--------------------------|-------------------------|---------------------------|------------------------|
 | Hemoglobin               | 13.5 g/dL               | 13.0 – 17.0 g/dL          | ✅ Normal              |
-| White Blood Cells        | 11.2 x10⁹/L             | 4.0 – 11.0 x10⁹/L         | ⚠️ Slightly Elevated   |
 
 ---
 
 ## 🧑‍⚕️ What This Means
-
-Explain the result in simple, non-technical language a patient can understand.
+Explain the findings in everyday language.
 
 ---
 
 ## 📝 Doctor’s Note (AI-Generated)
-
-> Provide a soft, informative suggestion — e.g., “Consult a doctor if you have symptoms,” or “Follow up may be needed.”
+> Give a soft follow-up recommendation.
 
 ---
 
-### Step 3: If isValidTest is false, explain why the input is not a valid lab or imaging report.
+#### 📄 For **Narrative Reports**, use:
+
+## 🧪 Test Summary
+- **Test Type:** <test name>
+- **Conclusion:** <Brief summary of outcome>
+
+---
+
+## 📌 Key Observations
+Summarize findings in 3–5 plain-language bullets.
+
+- No tumor seen in the liver.
+- Mild inflammation noted in the stomach lining.
+- Normal heart rhythm on ECG.
+
+---
+
+## 🧑‍⚕️ What This Means
+Break down findings in friendly, simple language. Avoid medical jargon.
+
+---
+
+## 📝 Doctor’s Note (AI-Generated)
+> Suggest next steps (e.g., “Consider follow-up imaging,” or “Discuss results with your doctor.”)
+
+---
+
+### Step 3: If isValidTest is false, explain why — briefly and clearly.
           `.trim(),
         },
         {
