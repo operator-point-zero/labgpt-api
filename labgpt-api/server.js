@@ -42,6 +42,11 @@ app.use('/interpret', (req, res) => {
   labRoutes(req, res);
 });
 
+app.use('/email', (req, res) => {
+  req.url = '/';
+  emailReultsRoutes(req, res);
+});
+
 app.use('/health', (req, res) => {
   req.url = '/';
   healthRoutes(req, res);
