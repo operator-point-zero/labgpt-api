@@ -2,7 +2,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
-const { chromium } = require('playwright'); // Changed: Import chromium from playwright
+const PDFDocument = require('pdfkit');
 const { marked } = require('marked');
 
 const router = express.Router();
@@ -108,6 +108,183 @@ function decrypt(encryptedData, clientId) {
   }
 }
 
+// MARKDOWN TO PDF CONVERTER USING PDFKIT
+function markdownToPDF(markdownText) {
+  return new Promise((resolve, reject) => {
+    try {
+      log.debug('📝 Starting markdown to PDF conversion');
+      
+      // Parse markdown to get structured data
+      const tokens = marked.lexer(markdownText);
+      log.debug('🔍 Parsed markdown tokens', { tokenCount: tokens.length });
+      
+      // Create PDF document
+      const doc = new PDFDocument({
+        size: 'A4',
+        margins: {
+          top: 50,
+          bottom: 50,
+          left: 50,
+          right: 50
+        }
+      });
+      
+      // Collect PDF data
+      const chunks = [];
+      doc.on('data', chunk => chunks.push(chunk));
+      doc.on('end', () => {
+        const pdfBuffer = Buffer.concat(chunks);
+        log.debug('✅ PDF generation completed', { 
+          pdfSize: `${(pdfBuffer.length / 1024).toFixed(2)} KB` 
+        });
+        resolve(pdfBuffer);
+      });
+      
+      doc.on('error', (error) => {
+        log.error('❌ PDF generation error', error);
+        reject(error);
+      });
+      
+      // Process each token
+      let isFirstPage = true;
+      
+      tokens.forEach((token, index) => {
+        try {
+          switch (token.type) {
+            case 'heading':
+              if (!isFirstPage && token.depth === 1) {
+                doc.addPage();
+              }
+              
+              const fontSize = token.depth === 1 ? 24 : 
+                             token.depth === 2 ? 20 : 
+                             token.depth === 3 ? 16 : 14;
+              
+              doc.fontSize(fontSize)
+                 .font('Helvetica-Bold')
+                 .fillColor('#2c3e50')
+                 .text(token.text, { align: 'left' })
+                 .moveDown(0.5);
+              
+              if (token.depth <= 2) {
+                doc.strokeColor('#3498db')
+                   .lineWidth(token.depth === 1 ? 2 : 1)
+                   .moveTo(doc.x, doc.y)
+                   .lineTo(doc.x + 400, doc.y)
+                   .stroke()
+                   .moveDown(0.5);
+              }
+              break;
+              
+            case 'paragraph':
+              doc.fontSize(12)
+                 .font('Helvetica')
+                 .fillColor('#333333')
+                 .text(token.text, { 
+                   align: 'justify',
+                   lineGap: 2
+                 })
+                 .moveDown(0.8);
+              break;
+              
+            case 'list':
+              token.items.forEach((item, itemIndex) => {
+                const bullet = token.ordered ? `${itemIndex + 1}. ` : '• ';
+                doc.fontSize(12)
+                   .font('Helvetica')
+                   .fillColor('#333333')
+                   .text(bullet + item.text, { 
+                     indent: 20,
+                     align: 'left'
+                   });
+              });
+              doc.moveDown(0.8);
+              break;
+              
+            case 'blockquote':
+              doc.rect(doc.x, doc.y, 4, 20)
+                 .fillColor('#3498db')
+                 .fill();
+              
+              doc.fontSize(12)
+                 .font('Helvetica-Oblique')
+                 .fillColor('#555555')
+                 .text(token.text, { 
+                   indent: 20,
+                   align: 'left'
+                 })
+                 .moveDown(0.8);
+              break;
+              
+            case 'code':
+              doc.rect(doc.x - 10, doc.y - 5, 420, 20)
+                 .fillColor('#f8f9fa')
+                 .fill();
+              
+              doc.fontSize(10)
+                 .font('Courier')
+                 .fillColor('#333333')
+                 .text(token.text, { 
+                   align: 'left'
+                 })
+                 .moveDown(0.8);
+              break;
+              
+            case 'hr':
+              doc.strokeColor('#cccccc')
+                 .lineWidth(1)
+                 .moveTo(doc.x, doc.y)
+                 .lineTo(doc.x + 400, doc.y)
+                 .stroke()
+                 .moveDown(1);
+              break;
+              
+            case 'space':
+              doc.moveDown(0.5);
+              break;
+              
+            default:
+              // Handle any other token types as plain text
+              if (token.text) {
+                doc.fontSize(12)
+                   .font('Helvetica')
+                   .fillColor('#333333')
+                   .text(token.text)
+                   .moveDown(0.5);
+              }
+              break;
+          }
+          
+          isFirstPage = false;
+          
+        } catch (tokenError) {
+          log.error(`❌ Error processing token ${index}`, tokenError);
+          // Continue processing other tokens
+        }
+      });
+      
+      // Add footer to all pages
+      const pageCount = doc.bufferedPageRange().count;
+      for (let i = 0; i < pageCount; i++) {
+        doc.switchToPage(i);
+        doc.fontSize(8)
+           .fillColor('#999999')
+           .text(`Page ${i + 1} of ${pageCount}`, 
+                 50, 
+                 doc.page.height - 30, 
+                 { align: 'center' });
+      }
+      
+      // Finalize the PDF
+      doc.end();
+      
+    } catch (error) {
+      log.error('❌ Markdown to PDF conversion failed', error);
+      reject(error);
+    }
+  });
+}
+
 // PDF GENERATION ROUTE
 router.post('/generate', async (req, res) => {
   const startTime = Date.now();
@@ -160,141 +337,27 @@ router.post('/generate', async (req, res) => {
     log.info(`🔓 Step 1: Decrypting content [${requestId}]`);
     const originalText = decrypt(encryptedContent, clientId);
     
-    // 2. Convert markdown to HTML
-    log.info(`📝 Step 2: Converting markdown to HTML [${requestId}]`);
-    let html;
-    try {
-      html = marked(originalText);
-      log.debug(`✅ Markdown conversion successful [${requestId}]`, { 
-        htmlLength: html.length 
-      });
-    } catch (markdownError) {
-      log.error(`❌ Markdown conversion failed [${requestId}]`, markdownError);
-      throw new Error(`Markdown conversion failed: ${markdownError.message}`);
-    }
-    
-    // 3. Make it look nice for PDF
-    log.info(`🎨 Step 3: Styling HTML for PDF [${requestId}]`);
-    const styledHtml = `
-      <html>
-        <head>
-          <meta charset="UTF-8">
-          <style>
-            body { 
-              font-family: Arial, sans-serif; 
-              padding: 40px; 
-              line-height: 1.6;
-              color: #333;
-            }
-            h1 { 
-              color: #2c3e50; 
-              border-bottom: 3px solid #3498db; 
-              padding-bottom: 10px;
-            }
-            h2 { 
-              color: #34495e; 
-              border-bottom: 1px solid #ecf0f1;
-              padding-bottom: 5px;
-            }
-            h3 { color: #7f8c8d; }
-            code { 
-              background: #f8f9fa; 
-              padding: 2px 6px; 
-              border-radius: 3px;
-              font-family: 'Courier New', monospace;
-            }
-            pre { 
-              background: #f8f9fa; 
-              padding: 15px; 
-              border-radius: 5px;
-              border-left: 4px solid #3498db;
-              overflow-x: auto;
-            }
-            table {
-              border-collapse: collapse;
-              width: 100%;
-              margin: 20px 0;
-            }
-            th, td {
-              border: 1px solid #ddd;
-              padding: 12px;
-              text-align: left;
-            }
-            th {
-              background-color: #f2f2f2;
-              font-weight: bold;
-            }
-            blockquote {
-              border-left: 4px solid #3498db;
-              padding-left: 20px;
-              margin: 20px 0;
-              background: #f8f9fa;
-              padding: 15px;
-              border-radius: 0 5px 5px 0;
-            }
-            ul, ol {
-              padding-left: 30px;
-            }
-            li {
-              margin-bottom: 5px;
-            }
-          </style>
-        </head>
-        <body>${html}</body>
-      </html>
-    `;
-    
-    log.debug(`✅ HTML styling complete [${requestId}]`, { 
-      styledHtmlLength: styledHtml.length 
-    });
-    
-    // 4. Generate PDF
-    log.info(`📄 Step 4: Generating PDF [${requestId}]`);
-    let browser;
+    // 2. Generate PDF directly from markdown using PDFKit
+    log.info(`📄 Step 2: Generating PDF from markdown [${requestId}]`);
     let pdfBuffer;
     try {
-      // Changed: Use chromium.launch instead of puppeteer.launch
-      browser = await chromium.launch({ 
-        headless: true, // Use 'new' for new headless mode in Playwright
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'] // Added --disable-dev-shm-usage for Render
-      });
-      log.debug(`✅ Browser launched [${requestId}]`);
-      
-      const page = await browser.newPage();
-      log.debug(`✅ New page created [${requestId}]`);
-      
-      await page.setContent(styledHtml, { waitUntil: 'networkidle0' });
-      log.debug(`✅ Content loaded in page [${requestId}]`);
-      
-      // Playwright's page.pdf options are very similar to Puppeteer's
-      pdfBuffer = await page.pdf({ 
-        format: 'A4',
-        printBackground: true,
-        margin: { top: '1cm', right: '1cm', bottom: '1cm', left: '1cm' }
-      });
-      
+      pdfBuffer = await markdownToPDF(originalText);
       log.info(`✅ PDF generated successfully [${requestId}]`, { 
         pdfSize: `${(pdfBuffer.length / 1024).toFixed(2)} KB` 
       });
-      
     } catch (pdfError) {
       log.error(`❌ PDF generation failed [${requestId}]`, pdfError);
       throw new Error(`PDF generation failed: ${pdfError.message}`);
-    } finally {
-      if (browser) {
-        await browser.close();
-        log.debug(`🔒 Browser closed [${requestId}]`);
-      }
     }
     
-    // 5. Send email
-    log.info(`📧 Step 5: Sending email [${requestId}]`, { 
+    // 3. Send email
+    log.info(`📧 Step 3: Sending email [${requestId}]`, { 
       to: emailAddress,
       filename: filename || 'document.pdf'
     });
     
     try {
-      const transporter = nodemailer.createTransport(emailConfig);
+      const transporter = nodemailer.createTransporter(emailConfig);
       
       const mailOptions = {
         from: emailConfig.auth.user,
@@ -372,9 +435,6 @@ router.post('/generate', async (req, res) => {
     } else if (error.message.includes('PDF generation failed')) {
       statusCode = 500;
       errorType = 'PDF_ERROR';
-    } else if (error.message.includes('Markdown conversion failed')) {
-      statusCode = 400;
-      errorType = 'MARKDOWN_ERROR';
     }
     
     res.status(statusCode).json({ 
@@ -392,7 +452,7 @@ router.get('/health', (req, res) => {
   log.info('🏥 PDF service health check requested');
   res.json({
     status: 'OK',
-    service: 'PDF Generation Service',
+    service: 'PDF Generation Service (PDFKit)',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     memory: process.memoryUsage()
