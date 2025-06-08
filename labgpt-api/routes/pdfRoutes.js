@@ -2,7 +2,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
-const puppeteer = require('puppeteer');
+const { chromium } = require('playwright'); // Changed: Import chromium from playwright
 const { marked } = require('marked');
 
 const router = express.Router();
@@ -253,9 +253,10 @@ router.post('/generate', async (req, res) => {
     let browser;
     let pdfBuffer;
     try {
-      browser = await puppeteer.launch({ 
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
+      // Changed: Use chromium.launch instead of puppeteer.launch
+      browser = await chromium.launch({ 
+        headless: true, // Use 'new' for new headless mode in Playwright
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'] // Added --disable-dev-shm-usage for Render
       });
       log.debug(`✅ Browser launched [${requestId}]`);
       
@@ -265,6 +266,7 @@ router.post('/generate', async (req, res) => {
       await page.setContent(styledHtml, { waitUntil: 'networkidle0' });
       log.debug(`✅ Content loaded in page [${requestId}]`);
       
+      // Playwright's page.pdf options are very similar to Puppeteer's
       pdfBuffer = await page.pdf({ 
         format: 'A4',
         printBackground: true,
