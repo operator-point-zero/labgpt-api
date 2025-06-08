@@ -357,7 +357,7 @@ router.post('/generate', async (req, res) => {
     });
     
     try {
-      const transporter = nodemailer.createTransporter(emailConfig);
+      const transporter = nodemailer.createTransport(emailConfig);
       
       const mailOptions = {
         from: emailConfig.auth.user,
