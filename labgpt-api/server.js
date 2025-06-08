@@ -16,6 +16,8 @@ const labRoutes = require('./routes/labRoutes');
 const healthRoutes = require('./routes/healthRoutes');
 const authRoutes = require('../labgpt-api/controllers/auth');
 const feedbackRoutes = require('../labgpt-api/controllers/feedback');
+const emailRoutes = require('../labgpt-api/controllers/emailResults');
+
 
 
 // Apply middleware
@@ -26,6 +28,8 @@ app.use('/api/labs', labRoutes);
 app.use('/api/health', healthRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/feedback', feedbackRoutes);
+app.use('/api/email', emailRoutes);
+
 
 
 app.get('/', (req, res) => {
@@ -41,6 +45,11 @@ app.use('/interpret', (req, res) => {
 app.use('/health', (req, res) => {
   req.url = '/';
   healthRoutes(req, res);
+});
+
+app.use('/email', (req, res) => {
+  req.url = '/';
+  emailRoutes(req, res);
 });
 
 // Start the server
