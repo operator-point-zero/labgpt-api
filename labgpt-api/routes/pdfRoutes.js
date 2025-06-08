@@ -108,14 +108,65 @@ function decrypt(encryptedData, clientId) {
   }
 }
 
+// CLEAN AND EXTRACT MARKDOWN CONTENT
+function extractMarkdownContent(text) {
+  try {
+    // If the text looks like JSON, try to extract the interpretation field
+    if (text.trim().startsWith('{') && text.includes('interpretation:')) {
+      const match = text.match(/interpretation:\s*(.+?)(?:,\s*testType:|$)/s);
+      if (match) {
+        return match[1].trim();
+      }
+    }
+    
+    // Otherwise return the text as-is
+    return text;
+  } catch (error) {
+    log.warn('Could not extract markdown content, using original text');
+    return text;
+  }
+}
+
+// SAFE TEXT PROCESSING (removes problematic characters)
+function safeText(text) {
+  if (!text) return '';
+  
+  // Remove or replace problematic characters
+  return text
+    .replace(/[^\x00-\x7F]/g, (char) => {
+      // Replace common emojis with text equivalents
+      const emojiMap = {
+        '🧪': '[Test]',
+        '🔍': '[Findings]',
+        '🧑‍⚕️': '[Doctor]',
+        '📝': '[Note]',
+        '❌': '[High/Low]',
+        '✅': '[Normal]',
+        '⚠️': '[Warning]',
+        '📊': '[Data]',
+        '🩺': '[Medical]'
+      };
+      return emojiMap[char] || '';
+    })
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 // MARKDOWN TO PDF CONVERTER USING PDFKIT
 function markdownToPDF(markdownText) {
   return new Promise((resolve, reject) => {
     try {
       log.debug('📝 Starting markdown to PDF conversion');
       
+      // Extract and clean the markdown content
+      const cleanedText = extractMarkdownContent(markdownText);
+      log.debug('🧹 Cleaned markdown text', { 
+        originalLength: markdownText.length,
+        cleanedLength: cleanedText.length 
+      });
+      
       // Parse markdown to get structured data
-      const tokens = marked.lexer(markdownText);
+      const tokens = marked.lexer(cleanedText);
       log.debug('🔍 Parsed markdown tokens', { tokenCount: tokens.length });
       
       // Create PDF document
@@ -160,10 +211,11 @@ function markdownToPDF(markdownText) {
                              token.depth === 2 ? 20 : 
                              token.depth === 3 ? 16 : 14;
               
+              const cleanHeading = safeText(token.text);
               doc.fontSize(fontSize)
                  .font('Helvetica-Bold')
                  .fillColor('#2c3e50')
-                 .text(token.text, { align: 'left' })
+                 .text(cleanHeading, { align: 'left' })
                  .moveDown(0.5);
               
               if (token.depth <= 2) {
@@ -177,57 +229,123 @@ function markdownToPDF(markdownText) {
               break;
               
             case 'paragraph':
-              doc.fontSize(12)
-                 .font('Helvetica')
-                 .fillColor('#333333')
-                 .text(token.text, { 
-                   align: 'justify',
-                   lineGap: 2
-                 })
-                 .moveDown(0.8);
+              const cleanParagraph = safeText(token.text);
+              if (cleanParagraph) {
+                doc.fontSize(12)
+                   .font('Helvetica')
+                   .fillColor('#333333')
+                   .text(cleanParagraph, { 
+                     align: 'justify',
+                     lineGap: 2
+                   })
+                   .moveDown(0.8);
+              }
               break;
               
             case 'list':
               token.items.forEach((item, itemIndex) => {
                 const bullet = token.ordered ? `${itemIndex + 1}. ` : '• ';
-                doc.fontSize(12)
-                   .font('Helvetica')
-                   .fillColor('#333333')
-                   .text(bullet + item.text, { 
-                     indent: 20,
-                     align: 'left'
-                   });
+                const cleanItem = safeText(item.text);
+                if (cleanItem) {
+                  doc.fontSize(12)
+                     .font('Helvetica')
+                     .fillColor('#333333')
+                     .text(bullet + cleanItem, { 
+                       indent: 20,
+                       align: 'left'
+                     });
+                }
               });
               doc.moveDown(0.8);
               break;
               
-            case 'blockquote':
-              doc.rect(doc.x, doc.y, 4, 20)
-                 .fillColor('#3498db')
-                 .fill();
+            case 'table':
+              // Handle tables manually since PDFKit doesn't have built-in table support
+              if (token.header && token.rows) {
+                // Table header
+                doc.fontSize(10)
+                   .font('Helvetica-Bold')
+                   .fillColor('#2c3e50');
+                
+                const colWidth = 120;
+                let startX = doc.x;
+                let startY = doc.y;
+                
+                // Draw header
+                token.header.forEach((header, i) => {
+                  const cleanHeader = safeText(header);
+                  doc.text(cleanHeader, startX + (i * colWidth), startY, {
+                    width: colWidth - 10,
+                    height: 20
+                  });
+                });
+                
+                doc.moveDown(1);
+                
+                // Draw horizontal line after header
+                doc.strokeColor('#cccccc')
+                   .lineWidth(1)
+                   .moveTo(startX, doc.y)
+                   .lineTo(startX + (token.header.length * colWidth), doc.y)
+                   .stroke();
+                
+                doc.moveDown(0.5);
+                
+                // Draw rows
+                token.rows.forEach((row, rowIndex) => {
+                  startY = doc.y;
+                  doc.fontSize(10)
+                     .font('Helvetica')
+                     .fillColor('#333333');
+                  
+                  row.forEach((cell, colIndex) => {
+                    const cleanCell = safeText(cell);
+                    doc.text(cleanCell, startX + (colIndex * colWidth), startY, {
+                      width: colWidth - 10,
+                      height: 20
+                    });
+                  });
+                  
+                  doc.moveDown(1);
+                });
+                
+                doc.moveDown(0.5);
+              }
+              break;
               
-              doc.fontSize(12)
-                 .font('Helvetica-Oblique')
-                 .fillColor('#555555')
-                 .text(token.text, { 
-                   indent: 20,
-                   align: 'left'
-                 })
-                 .moveDown(0.8);
+            case 'blockquote':
+              const cleanQuote = safeText(token.text);
+              if (cleanQuote) {
+                doc.rect(doc.x, doc.y, 4, 20)
+                   .fillColor('#3498db')
+                   .fill();
+                
+                doc.fontSize(12)
+                   .font('Helvetica-Oblique')
+                   .fillColor('#555555')
+                   .text(cleanQuote, { 
+                     indent: 20,
+                     align: 'left'
+                   })
+                   .moveDown(0.8);
+              }
               break;
               
             case 'code':
-              doc.rect(doc.x - 10, doc.y - 5, 420, 20)
-                 .fillColor('#f8f9fa')
-                 .fill();
-              
-              doc.fontSize(10)
-                 .font('Courier')
-                 .fillColor('#333333')
-                 .text(token.text, { 
-                   align: 'left'
-                 })
-                 .moveDown(0.8);
+              const cleanCode = safeText(token.text);
+              if (cleanCode) {
+                doc.rect(doc.x - 10, doc.y - 5, 420, 20)
+                   .fillColor('#f8f9fa')
+                   .fill();
+                
+                doc.fontSize(10)
+                   .font('Courier')
+                   .fillColor('#333333')
+                   .text(cleanCode, { 
+                     align: 'left'
+                   })
+                   .moveDown(0.8);
+              }
               break;
               
             case 'hr':
@@ -246,11 +364,14 @@ function markdownToPDF(markdownText) {
             default:
               // Handle any other token types as plain text
               if (token.text) {
-                doc.fontSize(12)
-                   .font('Helvetica')
-                   .fillColor('#333333')
-                   .text(token.text)
-                   .moveDown(0.5);
+                const cleanText = safeText(token.text);
+                if (cleanText) {
+                  doc.fontSize(12)
+                     .font('Helvetica')
+                     .fillColor('#333333')
+                     .text(cleanText)
+                     .moveDown(0.5);
+                }
               }
               break;
           }
