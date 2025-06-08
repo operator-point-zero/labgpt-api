@@ -5,11 +5,15 @@ echo "--- Installing Node.js dependencies ---"
 npm install
 
 echo "--- Installing Playwright browsers (Chromium) ---"
-# Playwright's installation usually handles its cache path well.
-# However, if you face issues, you can explicitly set PLAYWRIGHT_BROWSERS_PATH
-# export PLAYWRIGHT_BROWSERS_PATH="/opt/render/.cache/playwright/browsers"
+# Define a persistent path for Playwright browsers on Render
+# This path is commonly used for persistent data across deploys on Render
+export PLAYWRIGHT_BROWSERS_PATH="/opt/render/project/.cache/ms-playwright"
 
-# Install only Chromium to save space/time, as you're using `chromium` directly in your code.
-npx playwright install chromium
+# Ensure the directory exists
+mkdir -p "$PLAYWRIGHT_BROWSERS_PATH"
+
+# Install Chromium. This will download the browser to the path specified by PLAYWRIGHT_BROWSERS_PATH
+# The `--force` flag can sometimes help ensure the download happens reliably in CI/CD.
+npx playwright install chromium --force
 
 echo "--- Build complete ---"
