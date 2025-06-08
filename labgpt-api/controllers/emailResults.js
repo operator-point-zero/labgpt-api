@@ -1,6 +1,6 @@
 require('dotenv').config();
 const express = require('express');
-const connectDB = require('../labgpt-api/services/db'); // ✅ MongoDB connection
+const connectDB = require('../services/db'); // ✅ MongoDB connection
 const app = express();
 const port = process.env.PORT || 3000;
 
