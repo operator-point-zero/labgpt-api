@@ -179,10 +179,10 @@ async function markdownToPDF(markdownText, documentTitle = 'Generated Document')
   const pageMarginRight = doc.page.margins.right;
   const contentWidth = doc.page.width - pageMarginLeft - pageMarginRight;
 
-  // --- Header and Footer Drawing Function ---
-  // This function draws the header/footer given a page number and total pages.
-  // It's called for initial drawing and then again for final stamping.
-  const drawHeaderAndFooter = (docInstance, pageNumber, totalPages) => {
+  // --- Header and Footer Drawing Function (for initial pass) ---
+  // This function draws the header and a placeholder footer 'Page X of X'.
+  // It's called for initial drawing.
+  const drawInitialHeaderAndFooter = (docInstance, pageNumber) => {
     const pageHeight = docInstance.page.height;
     const pageWidth = docInstance.page.width;
 
@@ -205,18 +205,17 @@ async function markdownToPDF(markdownText, documentTitle = 'Generated Document')
                .lineTo(pageWidth - pageMarginRight, 55)
                .stroke();
 
-    // Footer
+    // Footer - Placeholder "Page X of X"
     docInstance.fillColor(Colors.mediumGrey)
                .font('Helvetica')
                .fontSize(8)
-               .text(`Page ${pageNumber} of ${totalPages}`, 
+               .text(`Page ${pageNumber} of X`, // 'X' is the placeholder
                      pageMarginLeft, pageHeight - 30, { width: contentWidth, align: 'center' });
   };
   
   // --- Register pageAdded event (will be called for each page initially) ---
-  // This draws a placeholder footer 'Page X of X' which will be overwritten later.
   doc.on('pageAdded', () => {
-    drawHeaderAndFooter(doc, doc.page.count, 'X'); // 'X' is a placeholder
+    drawInitialHeaderAndFooter(doc, doc.page.count); 
   });
 
 
@@ -225,9 +224,7 @@ async function markdownToPDF(markdownText, documentTitle = 'Generated Document')
     const tokens = marked.lexer(cleanedText);
 
     // Initial header/footer for the first page
-    // This ensures the first page has the header/footer before any content is added
-    // The 'X' will be replaced by the actual total pages later.
-    drawHeaderAndFooter(doc, 1, 'X'); // Draw for page 1 explicitly
+    drawInitialHeaderAndFooter(doc, 1); 
 
     for (const token of tokens) {
       switch (token.type) {
@@ -287,8 +284,6 @@ async function markdownToPDF(markdownText, documentTitle = 'Generated Document')
             const bullet = token.ordered ? `${i + 1}. ` : '• ';
             const itemText = safeText(item.text);
 
-            // Using text() with continued: true for bullet, then second text() for content
-            // Ensure no extra new page is forced here by text() itself
             doc.text(bullet, doc.x + listIndent, doc.y, { continued: true, width: listIndent });
             doc.text(itemText, {
               width: contentWidth - listIndent,
@@ -466,7 +461,7 @@ async function markdownToPDF(markdownText, documentTitle = 'Generated Document')
     // Finalize PDF and get total page count
     doc.end(); // This flushes all pending content to the stream and populates bufferedPageRange
 
-    // Collect buffer data
+    // Collect buffer data from the stream
     const pdfBuffer = await new Promise((resolve, reject) => {
         const chunks = [];
         bufferStream.on('data', chunk => chunks.push(chunk));
@@ -474,31 +469,43 @@ async function markdownToPDF(markdownText, documentTitle = 'Generated Document')
         bufferStream.on('error', reject);
     });
 
-    // --- SECOND PASS: RE-RENDER HEADERS/FOOTERS WITH FINAL PAGE COUNT ---
-    // This is crucial for 'Page X of Y' functionality in PDFKit
+    // --- SECOND PASS: OVERLAY TOTAL PAGE COUNT ---
+    // This is crucial for 'Page X of Y' functionality in PDFKit.
+    // We only modify the "X" placeholder in "Page X of X".
     const totalPages = doc.bufferedPageRange().count;
+    const pageHeight = doc.page.height;
+    const footerY = pageHeight - 30; // Y position for footer text
 
     for (let i = 0; i < totalPages; i++) {
-        // Switch to the specific page to modify it
-        doc.switchToPage(i);
+        doc.switchToPage(i); // Switch to the current page to modify it
+
+        // Calculate the position of "of X" assuming "Page [current] of X"
+        // This calculates where the 'X' in "Page X of X" would start for centering.
+        const currentPlaceholderText = `Page ${i + 1} of X`;
+        const initialTextWidth = doc.widthOfString(currentPlaceholderText, { align: 'center' });
+        const initialStartX = pageMarginLeft + (contentWidth - initialTextWidth) / 2;
         
-        // Clear previous header/footer placeholders by drawing white rectangles over them
-        // Adjust these coordinates to precisely cover the previously drawn elements
+        const stringBeforeX = `Page ${i + 1} of `;
+        const stringBeforeXWidth = doc.widthOfString(stringBeforeX);
+        
+        // This is the X coordinate where the 'X' (placeholder) was drawn
+        const placeholderX = initialStartX + stringBeforeXWidth; 
+
+        // 1. Clear the old "X" placeholder. Use a small white rectangle.
+        //    Ensure this rectangle covers just the 'X' part.
         doc.fillColor(Colors.white)
-           // Header area (covers title, date, and line)
-           .rect(pageMarginLeft, 0, contentWidth, 70) // Covers from top of page down to below the header line
-           .fill()
-           // Footer area
-           .rect(pageMarginLeft, doc.page.height - 40, contentWidth, 40) // Covers from footer line up to bottom of page
+           .rect(placeholderX, footerY, 10, 10) // Adjust size as needed to cover 'X'
            .fill();
         
-        // Redraw header and footer with the actual total pages
-        drawHeaderAndFooter(doc, i + 1, totalPages);
+        // 2. Draw the actual totalPages number on top of the cleared area.
+        doc.fillColor(Colors.mediumGrey)
+           .font('Helvetica')
+           .fontSize(8)
+           .text(totalPages.toString(), placeholderX, footerY, { continued: false }); 
     }
     
-    // Final end to ensure all modifications are written. This needs to be done AFTER
-    // all `switchToPage` and drawing operations are complete on the buffered pages.
-    doc.end(); 
+    // No second doc.end() here. The first one already closed the stream, and 
+    // modifications are applied to the buffered pages before the buffer is returned.
 
     log.info(`✅ PDF generated successfully with pdfkit`, { 
         pdfSize: `${(pdfBuffer.length / 1024).toFixed(2)} KB` 
