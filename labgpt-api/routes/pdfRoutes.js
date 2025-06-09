@@ -83,7 +83,7 @@ function decrypt(encryptedData, clientId) {
     // Check if data is valid
     log.debug('🔐 Verifying HMAC authentication...');
     const hmacInput = Buffer.concat([salt, iv, encrypted]);
-    const expectedTag = crypto.createHmac('sha256', hmacKey).update(hmacInput).digest();
+    const expectedTag = crypto.createHmac('sha256', hmacInput).digest();
     
     if (!authTag.equals(expectedTag)) {
       throw new Error('HMAC verification failed - data may be corrupted or tampered with');
@@ -178,12 +178,12 @@ async function markdownToPDF(markdownText, documentTitle = 'Generated Document')
   const pageMarginLeft = doc.page.margins.left;
   const pageMarginRight = doc.page.margins.right;
   const contentWidth = doc.page.width - pageMarginLeft - pageMarginRight;
+  const footerY = doc.page.height - 30; // Y position for footer text
 
-  // --- Header and Footer Drawing Function (for initial pass) ---
+  // --- Header and Footer Drawing Function (called manually) ---
   // This function draws the header and a placeholder footer 'Page X of X'.
-  // It's called for initial drawing.
-  const drawInitialHeaderAndFooter = (docInstance, pageNumber) => {
-    const pageHeight = docInstance.page.height;
+  // It's called whenever a new page is explicitly added.
+  const drawPageDecorations = (docInstance, pageNumber) => {
     const pageWidth = docInstance.page.width;
 
     // Header
@@ -210,23 +210,67 @@ async function markdownToPDF(markdownText, documentTitle = 'Generated Document')
                .font('Helvetica')
                .fontSize(8)
                .text(`Page ${pageNumber} of X`, // 'X' is the placeholder
-                     pageMarginLeft, pageHeight - 30, { width: contentWidth, align: 'center' });
+                     pageMarginLeft, footerY, { width: contentWidth, align: 'center' });
   };
   
-  // --- Register pageAdded event (will be called for each page initially) ---
-  doc.on('pageAdded', () => {
-    drawInitialHeaderAndFooter(doc, doc.page.count); 
-  });
-
+  // --- IMPORTANT: NO doc.on('pageAdded', ...) listener anymore ---
 
   try {
     const cleanedText = extractMarkdownContent(markdownText);
     const tokens = marked.lexer(cleanedText);
 
-    // Initial header/footer for the first page
-    drawInitialHeaderAndFooter(doc, 1); 
+    // Manually add the first page and its decorations
+    doc.addPage(); 
+    drawPageDecorations(doc, 1);
+    doc.y = 70; // Set initial Y position for content after header
 
     for (const token of tokens) {
+      // Calculate approximate height of the next element to check for page overflow
+      let elementHeight = 0;
+      doc.font('Helvetica').fontSize(12); // Default font for height calculations
+
+      switch (token.type) {
+        case 'heading':
+          elementHeight = doc.heightOfString(safeText(token.text), { width: contentWidth }) + 30; // Estimate
+          break;
+        case 'paragraph':
+          elementHeight = doc.heightOfString(safeText(token.text), { width: contentWidth, lineGap: 4 }) + 20;
+          break;
+        case 'list':
+          elementHeight = token.items.length * (doc.heightOfString('Example item', { width: contentWidth - 20 }) + 5) + 30; // Estimate
+          break;
+        case 'table':
+          elementHeight = (token.header.length > 0 ? 25 : 0) + (token.rows.length * 20) + 30; // Estimate
+          break;
+        case 'blockquote':
+          elementHeight = doc.heightOfString(safeText(token.text), { width: contentWidth - 40, lineGap: 4 }) + 50; // Estimate
+          break;
+        case 'code':
+          elementHeight = doc.heightOfString(safeText(token.text), { width: contentWidth - 20, lineGap: 2 }) + 40; // Estimate
+          break;
+        case 'hr':
+          elementHeight = 30;
+          break;
+        case 'space':
+          elementHeight = 10;
+          break;
+        default:
+          if (token.text) {
+              elementHeight = doc.heightOfString(safeText(token.text), { width: contentWidth, lineGap: 4 }) + 20;
+          }
+          break;
+      }
+      
+      // Check if current element will overflow the page
+      // doc.page.height - doc.page.margins.bottom is the safe bottom margin.
+      // -5 is a small buffer to prevent cutting off precisely at the margin
+      if (doc.y + elementHeight > (doc.page.height - doc.page.margins.bottom - 5)) {
+          doc.addPage();
+          drawPageDecorations(doc, doc.page.count);
+          doc.y = doc.page.margins.top; // Reset Y position for content on new page
+      }
+
+      // Now draw the element
       switch (token.type) {
         case 'heading': { 
           let headingSize;
@@ -459,9 +503,9 @@ async function markdownToPDF(markdownText, documentTitle = 'Generated Document')
     }
 
     // Finalize PDF and get total page count
-    doc.end(); // This flushes all pending content to the stream and populates bufferedPageRange
+    doc.end(); 
 
-    // Collect buffer data from the stream
+    // Collect buffer data
     const pdfBuffer = await new Promise((resolve, reject) => {
         const chunks = [];
         bufferStream.on('data', chunk => chunks.push(chunk));
@@ -470,17 +514,12 @@ async function markdownToPDF(markdownText, documentTitle = 'Generated Document')
     });
 
     // --- SECOND PASS: OVERLAY TOTAL PAGE COUNT ---
-    // This is crucial for 'Page X of Y' functionality in PDFKit.
-    // We only modify the "X" placeholder in "Page X of X".
     const totalPages = doc.bufferedPageRange().count;
-    const pageHeight = doc.page.height;
-    const footerY = pageHeight - 30; // Y position for footer text
 
     for (let i = 0; i < totalPages; i++) {
-        doc.switchToPage(i); // Switch to the current page to modify it
+        doc.switchToPage(i); 
 
-        // Calculate the position of "of X" assuming "Page [current] of X"
-        // This calculates where the 'X' in "Page X of X" would start for centering.
+        // Calculate the position of "of X" in "Page [current] of X" to clear and replace
         const currentPlaceholderText = `Page ${i + 1} of X`;
         const initialTextWidth = doc.widthOfString(currentPlaceholderText, { align: 'center' });
         const initialStartX = pageMarginLeft + (contentWidth - initialTextWidth) / 2;
@@ -488,25 +527,20 @@ async function markdownToPDF(markdownText, documentTitle = 'Generated Document')
         const stringBeforeX = `Page ${i + 1} of `;
         const stringBeforeXWidth = doc.widthOfString(stringBeforeX);
         
-        // This is the X coordinate where the 'X' (placeholder) was drawn
         const placeholderX = initialStartX + stringBeforeXWidth; 
 
-        // 1. Clear the old "X" placeholder. Use a small white rectangle.
-        //    Ensure this rectangle covers just the 'X' part.
+        // Clear the old "X" placeholder.
         doc.fillColor(Colors.white)
-           .rect(placeholderX, footerY, 10, 10) // Adjust size as needed to cover 'X'
+           .rect(placeholderX, footerY, 10, 10) 
            .fill();
         
-        // 2. Draw the actual totalPages number on top of the cleared area.
+        // Draw the actual totalPages number.
         doc.fillColor(Colors.mediumGrey)
            .font('Helvetica')
            .fontSize(8)
            .text(totalPages.toString(), placeholderX, footerY, { continued: false }); 
     }
     
-    // No second doc.end() here. The first one already closed the stream, and 
-    // modifications are applied to the buffered pages before the buffer is returned.
-
     log.info(`✅ PDF generated successfully with pdfkit`, { 
         pdfSize: `${(pdfBuffer.length / 1024).toFixed(2)} KB` 
     });
