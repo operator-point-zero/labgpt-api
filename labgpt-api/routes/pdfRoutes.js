@@ -177,47 +177,46 @@ async function markdownToPDF(markdownText, documentTitle = 'Generated Document')
 
   const pageMarginLeft = doc.page.margins.left;
   const pageMarginRight = doc.page.margins.right;
-  // const pageMarginTop = doc.page.margins.top; // Not directly used in positioning, but for doc init
-  // const pageMarginBottom = doc.page.margins.bottom; // Not directly used in positioning
   const contentWidth = doc.page.width - pageMarginLeft - pageMarginRight;
 
   // --- Header and Footer Drawing Function ---
-  const addPageHeaderAndFooter = (doc, pageNumber, totalPages) => {
-    const pageHeight = doc.page.height;
-    const pageWidth = doc.page.width;
+  // This function draws the header/footer given a page number and total pages.
+  // It's called for initial drawing and then again for final stamping.
+  const drawHeaderAndFooter = (docInstance, pageNumber, totalPages) => {
+    const pageHeight = docInstance.page.height;
+    const pageWidth = docInstance.page.width;
 
     // Header
-    doc.fillColor(Colors.primary)
-       .font('Helvetica-Bold')
-       .fontSize(10)
-       .text(documentTitle, pageMarginLeft, 40, { align: 'left' });
+    docInstance.fillColor(Colors.primary)
+               .font('Helvetica-Bold')
+               .fontSize(10)
+               .text(documentTitle, pageMarginLeft, 40, { align: 'left' });
 
-    doc.fillColor(Colors.mediumGrey)
-       .font('Helvetica')
-       .fontSize(8)
-       .text(new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }), 
-             pageWidth - pageMarginRight - 100, 40, { width: 100, align: 'right' });
+    docInstance.fillColor(Colors.mediumGrey)
+               .font('Helvetica')
+               .fontSize(8)
+               .text(new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }), 
+                     pageWidth - pageMarginRight - 100, 40, { width: 100, align: 'right' });
 
     // Header line
-    doc.strokeColor(Colors.accent)
-       .lineWidth(1)
-       .moveTo(pageMarginLeft, 55)
-       .lineTo(pageWidth - pageMarginRight, 55)
-       .stroke();
+    docInstance.strokeColor(Colors.accent)
+               .lineWidth(1)
+               .moveTo(pageMarginLeft, 55)
+               .lineTo(pageWidth - pageMarginRight, 55)
+               .stroke();
 
     // Footer
-    doc.fillColor(Colors.mediumGrey)
-       .font('Helvetica')
-       .fontSize(8)
-       .text(`Page ${pageNumber} of ${totalPages}`, 
-             pageMarginLeft, pageHeight - 30, { width: contentWidth, align: 'center' });
+    docInstance.fillColor(Colors.mediumGrey)
+               .font('Helvetica')
+               .fontSize(8)
+               .text(`Page ${pageNumber} of ${totalPages}`, 
+                     pageMarginLeft, pageHeight - 30, { width: contentWidth, align: 'center' });
   };
   
-  // --- Register pageAdded event (will be called for each page) ---
+  // --- Register pageAdded event (will be called for each page initially) ---
+  // This draws a placeholder footer 'Page X of X' which will be overwritten later.
   doc.on('pageAdded', () => {
-    // This will be called *after* doc.end() as well to re-stamp total pages
-    // Placeholder total pages for now.
-    addPageHeaderAndFooter(doc, doc.page.count, 'X'); 
+    drawHeaderAndFooter(doc, doc.page.count, 'X'); // 'X' is a placeholder
   });
 
 
@@ -228,15 +227,15 @@ async function markdownToPDF(markdownText, documentTitle = 'Generated Document')
     // Initial header/footer for the first page
     // This ensures the first page has the header/footer before any content is added
     // The 'X' will be replaced by the actual total pages later.
-    addPageHeaderAndFooter(doc, 1, 'X');
+    drawHeaderAndFooter(doc, 1, 'X'); // Draw for page 1 explicitly
 
     for (const token of tokens) {
       switch (token.type) {
-        case 'heading': { // Added block scope
+        case 'heading': { 
           let headingSize;
           let spacingAfterHeading;
           switch (token.depth) {
-            case 1: headingSize = 24; spacingAfterHeading = 0.5; break; // in lines
+            case 1: headingSize = 24; spacingAfterHeading = 0.5; break; 
             case 2: headingSize = 20; spacingAfterHeading = 0.4; break;
             case 3: headingSize = 16; spacingAfterHeading = 0.3; break;
             default: headingSize = 14; spacingAfterHeading = 0.2; break;
@@ -247,60 +246,62 @@ async function markdownToPDF(markdownText, documentTitle = 'Generated Document')
              .fontSize(headingSize)
              .text(safeText(token.text), {
                width: contentWidth,
-               continued: false // Ensure new line after heading
+               continued: false 
              })
-             .moveDown(0.2); // Small initial move down
+             .moveDown(0.2); 
 
           if (token.depth <= 2) {
-            const currentY = doc.y; // Get current Y position
+            const currentY = doc.y; 
             doc.strokeColor(Colors.accent)
                .lineWidth(token.depth === 1 ? 2 : 1)
                .moveTo(doc.x, currentY)
                .lineTo(doc.x + contentWidth * 0.7, currentY)
                .stroke()
-               .moveDown(0.2); // Space after line
+               .moveDown(0.2); 
           }
-          doc.moveDown(spacingAfterHeading); // Additional spacing after heading
+          doc.moveDown(spacingAfterHeading); 
           break;
-        } // End block scope
+        } 
 
-        case 'paragraph': { // Added block scope
+        case 'paragraph': { 
           doc.fillColor(Colors.text)
              .font('Helvetica')
              .fontSize(12)
              .text(safeText(token.text), {
                width: contentWidth,
-               lineGap: 4 // Adjust for comfortable line spacing
+               lineGap: 4 
              })
-             .moveDown(0.7); // Space after paragraph
+             .moveDown(0.7); 
           break;
-        } // End block scope
+        } 
 
-        case 'list': { // Added block scope
+        case 'list': { 
           const listIndent = 20;
           doc.fillColor(Colors.text)
              .font('Helvetica')
              .fontSize(12)
-             .moveDown(0.5); // Space before list
+             .moveDown(0.5); 
 
           for (let i = 0; i < token.items.length; i++) {
             const item = token.items[i];
             const bullet = token.ordered ? `${i + 1}. ` : '• ';
             const itemText = safeText(item.text);
 
+            // Using text() with continued: true for bullet, then second text() for content
+            // Ensure no extra new page is forced here by text() itself
             doc.text(bullet, doc.x + listIndent, doc.y, { continued: true, width: listIndent });
             doc.text(itemText, {
               width: contentWidth - listIndent,
               indent: listIndent,
               lineGap: 4
             })
-            .moveDown(0.2); // Small space between list items
+            .moveDown(0.2); 
           }
-          doc.moveDown(0.7); // Space after list
+          doc.moveDown(0.7); 
           break;
-        } // End block scope
+        } 
 
-        case 'table': { // Added block scope
+        case 'table': { 
           if (token.header && token.rows) {
               const numColumns = token.header.length;
               const colWidth = contentWidth / numColumns;
@@ -308,7 +309,7 @@ async function markdownToPDF(markdownText, documentTitle = 'Generated Document')
               const dataRowHeight = 20; 
               const cellPadding = 5;
 
-              doc.moveDown(0.5); // Space before table
+              doc.moveDown(0.5); 
 
               // Helper to draw a cell
               const drawCell = (text, x, y, width, height, font, fontSize, fillColor, textColor, align) => {
@@ -323,7 +324,7 @@ async function markdownToPDF(markdownText, documentTitle = 'Generated Document')
                          width: width - (2 * cellPadding),
                          align: align,
                          height: height - (2 * cellPadding),
-                         valign: 'center' // Vertically center text
+                         valign: 'center' 
                      });
               };
 
@@ -350,25 +351,25 @@ async function markdownToPDF(markdownText, documentTitle = 'Generated Document')
                   }
                   currentTableY += dataRowHeight;
               }
-              doc.y = currentTableY + 20; // Set doc.y after table with some margin
+              doc.y = currentTableY + 20; 
           }
           break;
-        } // End block scope
+        } 
 
-        case 'blockquote': { // Added block scope
+        case 'blockquote': { 
             const quoteText = safeText(token.text);
             const quoteLineThickness = 5;
             const quotePadding = 15;
             const quoteContentWidth = contentWidth - quoteLineThickness - (2 * quotePadding);
 
-            doc.moveDown(0.5); // Space before blockquote
+            doc.moveDown(0.5); 
 
             // Calculate height of the blockquote content
             doc.font('Helvetica-Oblique').fontSize(12);
             const quoteHeight = doc.heightOfString(quoteText, {
                 width: quoteContentWidth,
                 lineGap: 4
-            }) + (2 * quotePadding); // Add padding for top/bottom
+            }) + (2 * quotePadding); 
 
             const blockquoteY = doc.y;
             // Draw background rectangle
@@ -390,24 +391,23 @@ async function markdownToPDF(markdownText, documentTitle = 'Generated Document')
                    lineGap: 4
                });
             
-            // Move y position correctly after the blockquote
-            doc.y = blockquoteY + quoteHeight + 20; // Set doc.y after blockquote with margin
+            doc.y = blockquoteY + quoteHeight + 20; 
             break;
-        } // End block scope
+        } 
 
-        case 'code': { // Added block scope
+        case 'code': { 
             const codeContent = safeText(token.text);
             const codePadding = 10;
             const codeContentWidth = contentWidth - (2 * codePadding);
 
-            doc.moveDown(0.5); // Space before code block
+            doc.moveDown(0.5); 
 
             // Calculate height of the code block content
             doc.font('Courier').fontSize(10);
             const codeHeight = doc.heightOfString(codeContent, {
                 width: codeContentWidth,
                 lineGap: 2
-            }) + (2 * codePadding); // Add padding for top/bottom
+            }) + (2 * codePadding); 
 
             const codeBlockY = doc.y;
             // Draw background rectangle and border
@@ -427,27 +427,26 @@ async function markdownToPDF(markdownText, documentTitle = 'Generated Document')
                    lineGap: 2
                });
 
-            // Move y position correctly after the code block
-            doc.y = codeBlockY + codeHeight + 20; // Set doc.y after code block with margin
+            doc.y = codeBlockY + codeHeight + 20; 
             break;
-        } // End block scope
+        } 
 
-        case 'hr': { // Added block scope
-            doc.moveDown(0.7); // Space before HR
+        case 'hr': { 
+            doc.moveDown(0.7); 
             const currentY = doc.y;
             doc.strokeColor(Colors.mediumGrey)
                .lineWidth(0.5)
                .moveTo(pageMarginLeft, currentY)
                .lineTo(pageMarginLeft + contentWidth, currentY)
                .stroke()
-               .moveDown(0.7); // Space after HR
+               .moveDown(0.7); 
             break;
-        } // End block scope
+        } 
 
-        case 'space': { // Added block scope
-            doc.moveDown(0.5); // Add some vertical space
+        case 'space': { 
+            doc.moveDown(0.5); 
             break;
-        } // End block scope
+        } 
 
         default:
           if (token.text) {
@@ -458,14 +457,14 @@ async function markdownToPDF(markdownText, documentTitle = 'Generated Document')
                  width: contentWidth,
                  lineGap: 4
                })
-               .moveDown(0.7); // Space after generic text
+               .moveDown(0.7); 
           }
           break;
       }
     }
 
     // Finalize PDF and get total page count
-    doc.end();
+    doc.end(); // This flushes all pending content to the stream and populates bufferedPageRange
 
     // Collect buffer data
     const pdfBuffer = await new Promise((resolve, reject) => {
@@ -475,29 +474,30 @@ async function markdownToPDF(markdownText, documentTitle = 'Generated Document')
         bufferStream.on('error', reject);
     });
 
-    // --- RE-RENDER FOOTERS WITH FINAL PAGE COUNT ---
-    // This part requires PDFKit's bufferPages option.
-    // It iterates through each page, clears the previous footer, and draws the final one.
-    // This assumes `doc.end()` has already processed all content.
+    // --- SECOND PASS: RE-RENDER HEADERS/FOOTERS WITH FINAL PAGE COUNT ---
+    // This is crucial for 'Page X of Y' functionality in PDFKit
     const totalPages = doc.bufferedPageRange().count;
 
     for (let i = 0; i < totalPages; i++) {
         // Switch to the specific page to modify it
         doc.switchToPage(i);
         
-        // Clear previous footer placeholder by drawing a white rectangle over it
-        // Ensure this rectangle covers the area where the footer was drawn
+        // Clear previous header/footer placeholders by drawing white rectangles over them
+        // Adjust these coordinates to precisely cover the previously drawn elements
         doc.fillColor(Colors.white)
-           .rect(doc.page.margins.left, doc.page.height - 40, contentWidth, 30)
+           // Header area (covers title, date, and line)
+           .rect(pageMarginLeft, 0, contentWidth, 70) // Covers from top of page down to below the header line
+           .fill()
+           // Footer area
+           .rect(pageMarginLeft, doc.page.height - 40, contentWidth, 40) // Covers from footer line up to bottom of page
            .fill();
         
         // Redraw header and footer with the actual total pages
-        addPageHeaderAndFooter(doc, i + 1, totalPages);
+        drawHeaderAndFooter(doc, i + 1, totalPages);
     }
     
-    // Final end to ensure all modifications are written (important for bufferedPageRange updates)
-    // Note: this `doc.end()` is effectively a no-op for the stream, as it's already ended,
-    // but ensures PDFKit's internal state is fully finalized for the buffered pages.
+    // Final end to ensure all modifications are written. This needs to be done AFTER
+    // all `switchToPage` and drawing operations are complete on the buffered pages.
     doc.end(); 
 
     log.info(`✅ PDF generated successfully with pdfkit`, { 
@@ -683,7 +683,7 @@ router.get('/health', (req, res) => {
   log.info('🏥 PDF service health check requested');
   res.json({
     status: 'OK',
-    service: 'PDF Generation Service (PDFKit)', // Updated service name
+    service: 'PDF Generation Service (PDFKit)', 
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     memory: process.memoryUsage()
