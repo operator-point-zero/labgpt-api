@@ -18,7 +18,7 @@ const pdfRoutes = require('./routes/pdfRoutes'); // NEW: PDF routes
 // Create router files for these if they don't exist, or comment them out for now
 const authRoutes = require('../labgpt-api/controllers/auth');
 const feedbackRoutes = require('../labgpt-api/controllers/feedback'); 
-const emailRoutes = require('../labgpt-api/controllers/emailResults');
+// const emailRoutes = require('../labgpt-api/controllers/emailResults');
 
 // Apply middleware
 middleware(app);
@@ -31,7 +31,7 @@ app.use('/api/pdf', pdfRoutes); // NEW: PDF routes
 // Comment these out until you create proper router files
 app.use('/api/auth', authRoutes);
 app.use('/api/feedback', feedbackRoutes);
-app.use('/api/email', emailRoutes);
+// app.use('/api/email', emailRoutes);
 
 app.get('/', (req, res) => {
   res.send('🧪 LabGPT API is up and running!');
