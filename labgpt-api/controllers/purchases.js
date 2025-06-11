@@ -58,7 +58,7 @@
 const express = require('express');
 const router = express.Router();
 const User = require('../models/user'); // Adjust path to your User model
-const Transaction = require('../models/Transaction'); // NEW: Import the Transaction model
+const Transaction = require('../models/transactions'); // NEW: Import the Transaction model
 
 // Endpoint for updating user after a successful purchase
 // WARNING: This endpoint does NOT use an authentication token.
