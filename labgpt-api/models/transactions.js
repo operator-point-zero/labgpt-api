@@ -1,4 +1,4 @@
-// models/Transaction.js
+// models/Transaction.js (UPDATED)
 const mongoose = require('mongoose');
 
 const transactionSchema = new mongoose.Schema({
@@ -12,10 +12,11 @@ const transactionSchema = new mongoose.Schema({
     required: true,
     unique: true
   },
-  purchaseType: { // 'lifetime', 'monthly', 'annual', etc.
+  purchaseType: { // 'single_interpretation_credit', 'monthly', 'annual', etc.
     type: String,
     required: true,
-    enum: ['lifetime', 'monthly', 'annual', 'weekly', 'other'] // Add more as needed
+    // --- THIS IS THE CRUCIAL CHANGE ---
+    enum: ['single_interpretation_credit', 'monthly', 'annual', 'weekly', 'other'] // 'lifetime' was removed as it's now 'single_interpretation_credit'
   },
   amount: {
     type: Number,
