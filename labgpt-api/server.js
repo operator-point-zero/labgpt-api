@@ -20,6 +20,8 @@ const authRoutes = require('../labgpt-api/controllers/auth');
 const feedbackRoutes = require('../labgpt-api/controllers/feedback'); 
 // const emailRoutes = require('../labgpt-api/controllers/emailResults');
 const purchaseRoutes = require('../labgpt-api/controllers/purchases'); 
+const checkSubscription = require('../labgpt-api/controllers/checkPurchasesStatus'); 
+
 
 // Apply middleware
 middleware(app);
@@ -33,6 +35,8 @@ app.use('/api/pdf', pdfRoutes); // NEW: PDF routes
 app.use('/api/auth', authRoutes);
 app.use('/api/feedback', feedbackRoutes);
 app.use('/api/purchases', purchaseRoutes);
+app.use('/api/checkStatus', checkSubscription);
+
 // app.use('/api/email', emailRoutes);
 
 app.get('/', (req, res) => {
