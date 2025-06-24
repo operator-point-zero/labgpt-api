@@ -582,7 +582,6 @@
 
 // module.exports = router;
 
-// routes/pdfRoutes.js
 const express = require('express');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
@@ -1191,7 +1190,8 @@ router.post('/generate', async (req, res) => {
     });
     
     try {
-      const transporter = nodemailer.createTransporter(emailConfig);
+      // FIXED: Use createTransport instead of createTransporter
+      const transporter = nodemailer.createTransport(emailConfig);
       const testInfo = extractTestInfo(aiInterpretation);
       
       const mailOptions = {
