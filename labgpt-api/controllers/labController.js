@@ -675,25 +675,28 @@ function checkSubscriptionStatus(user) {
     };
   }
 
-  // First check if subscription has expired (this takes priority)
-  if (user.subscription.expiryDate && new Date(user.subscription.expiryDate) < now) {
-    return {
-      isValid: false,
-      reason: 'Subscription has expired',
-      expiryDate: user.subscription.expiryDate
-    };
+  // PRIORITY 1: Check expiry date first (if it exists)
+  if (user.subscription.expiryDate) {
+    const expiryDate = new Date(user.subscription.expiryDate);
+    
+    if (expiryDate < now) {
+      // Subscription has expired
+      return {
+        isValid: false,
+        reason: 'Subscription has expired',
+        expiryDate: user.subscription.expiryDate
+      };
+    } else {
+      // Subscription has not expired - it's valid regardless of isSubscribed flag
+      return {
+        isValid: true,
+        packageType: user.subscription.packageType,
+        expiryDate: user.subscription.expiryDate
+      };
+    }
   }
 
-  // If not expired, check if there's a valid expiry date (meaning there was a subscription)
-  if (user.subscription.expiryDate && new Date(user.subscription.expiryDate) >= now) {
-    return {
-      isValid: true,
-      packageType: user.subscription.packageType,
-      expiryDate: user.subscription.expiryDate
-    };
-  }
-
-  // If no expiry date but isSubscribed is true, consider it valid
+  // PRIORITY 2: If no expiry date, fall back to isSubscribed flag
   if (user.subscription.isSubscribed) {
     return {
       isValid: true,
