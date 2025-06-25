@@ -628,6 +628,42 @@ function decrypt(encryptedData, password) {
 }
 
 // Helper function to check subscription status
+// function checkSubscriptionStatus(user) {
+//   const now = new Date();
+  
+//   // Check if user has a subscription object
+//   if (!user.subscription) {
+//     return {
+//       isValid: false,
+//       reason: 'No subscription found'
+//     };
+//   }
+
+//   // Check if subscription is active
+//   if (!user.subscription.isSubscribed) {
+//     return {
+//       isValid: false,
+//       reason: 'Subscription is not active'
+//     };
+//   }
+
+//   // Check if subscription has expired
+//   if (user.subscription.expiryDate && new Date(user.subscription.expiryDate) < now) {
+//     return {
+//       isValid: false,
+//       reason: 'Subscription has expired',
+//       expiryDate: user.subscription.expiryDate
+//     };
+//   }
+
+//   return {
+//     isValid: true,
+//     packageType: user.subscription.packageType,
+//     expiryDate: user.subscription.expiryDate
+//   };
+// }
+
+// Helper function to check subscription status - FIXED VERSION
 function checkSubscriptionStatus(user) {
   const now = new Date();
   
@@ -639,15 +675,7 @@ function checkSubscriptionStatus(user) {
     };
   }
 
-  // Check if subscription is active
-  if (!user.subscription.isSubscribed) {
-    return {
-      isValid: false,
-      reason: 'Subscription is not active'
-    };
-  }
-
-  // Check if subscription has expired
+  // First check if subscription has expired (this takes priority)
   if (user.subscription.expiryDate && new Date(user.subscription.expiryDate) < now) {
     return {
       isValid: false,
@@ -656,10 +684,28 @@ function checkSubscriptionStatus(user) {
     };
   }
 
+  // If not expired, check if there's a valid expiry date (meaning there was a subscription)
+  if (user.subscription.expiryDate && new Date(user.subscription.expiryDate) >= now) {
+    return {
+      isValid: true,
+      packageType: user.subscription.packageType,
+      expiryDate: user.subscription.expiryDate
+    };
+  }
+
+  // If no expiry date but isSubscribed is true, consider it valid
+  if (user.subscription.isSubscribed) {
+    return {
+      isValid: true,
+      packageType: user.subscription.packageType,
+      expiryDate: user.subscription.expiryDate
+    };
+  }
+
+  // Default case - no active subscription
   return {
-    isValid: true,
-    packageType: user.subscription.packageType,
-    expiryDate: user.subscription.expiryDate
+    isValid: false,
+    reason: 'Subscription is not active'
   };
 }
 
