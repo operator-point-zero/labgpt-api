@@ -364,7 +364,7 @@ async function findWorkingSMTPConfig() {
   for (const { name, config } of smtpConfigs) {
     try {
       console.log(`Testing ${name}...`);
-      const testTransporter = nodemailer.createTransporter(config);
+      const testTransporter = nodemailer.createTransport(config);
       await testTransporter.verify();
       console.log(`✅ ${name} - Connection successful!`);
       return testTransporter;
@@ -386,7 +386,7 @@ let transporter;
   } catch (error) {
     console.error('Failed to initialize SMTP transporter:', error.message);
     // Create a fallback transporter for now
-    transporter = nodemailer.createTransporter({
+    transporter = nodemailer.createTransport({
       host: 'labmate.docspace.co.ke',
       port: 465,
       secure: true,
