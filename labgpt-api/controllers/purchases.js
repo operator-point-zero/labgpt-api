@@ -129,7 +129,7 @@ require('dotenv').config();
 
 // Setup Nodemailer with Webmail SMTP
 const transporter = nodemailer.createTransport({
-  host: 'mail.docspace.co.ke', // Replace with your actual SMTP host
+  host: 'mail.labmate.docspace.co.ke', // Replace with your actual SMTP host
   port: 465, // Use 587 if TLS
   secure: true,
   auth: {

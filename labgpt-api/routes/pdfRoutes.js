@@ -619,7 +619,7 @@ const log = {
 
 // EMAIL SETUP
 const emailConfig = {
-  host: 'mail.docspace.co.ke',
+  host: 'mail.labmate.docspace.co.ke',
   port: 465,
   secure: true,
   auth: {
