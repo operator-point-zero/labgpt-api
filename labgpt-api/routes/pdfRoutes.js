@@ -623,8 +623,8 @@ const emailConfig = {
   port: 465,
   secure: true,
   auth: {
-    user: 'mailtest@docspace.co.ke',
-    pass: '~iizVde!Ua^SP;MD'
+    user: RESULTS_USER,
+    pass: RESULTS_PASS
   }
 };
 
