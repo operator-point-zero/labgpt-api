@@ -623,8 +623,8 @@ const emailConfig = {
   port: 465,
   secure: true,
   auth: {
-    user: RESULTS_USER,
-    pass: RESULTS_PASS
+    user: process.env.RESULTS_USER,
+    pass: process.env.RESULTS_PASS
   }
 };
 
