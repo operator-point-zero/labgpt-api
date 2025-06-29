@@ -497,18 +497,84 @@ router.post('/purchase-success', async (req, res) => {
     let emailBody = '';
     let subject = '';
 
+    // if (purchaseType === 'single_interpretation_credit') {
+    //   user.singleLabInterpretationsRemaining += 4;
+
+    //   subject = '🎉 Thank You for Your Purchase – 4 More Interpretations Added';
+    //   emailBody = `
+    //     <p>Hi ${user.name || ''},</p>
+    //     <p>Thanks for your purchase! We've added <strong>4 more lab interpretation credits</strong> to your account.</p>
+    //     <p>Use them anytime to get private, AI-powered insights from your lab tests.</p>
+    //     <p>Need help? Just reply to this email or reach us at <a href="mailto:support@labmate.docspace.co.ke">support@labmate.docspace.co.ke</a>.</p>
+    //     <p>— The Labmate Team</p>
+    //   `;
+
+    // } else if (purchaseType === 'subscription') {
+    //   let subscriptionDates;
+    //   try {
+    //     subscriptionDates = calculateSubscriptionDates(transactionDetails.packageType);
+    //   } catch (error) {
+    //     return res.status(400).json({ message: error.message });
+    //   }
+
+    //   user.subscription.isSubscribed = true;
+    //   user.subscription.transactionId = transactionDetails.transactionId;
+    //   user.subscription.amount = transactionDetails.amount;
+    //   user.subscription.startDate = subscriptionDates.startDate;
+    //   user.subscription.expiryDate = subscriptionDates.expiryDate;
+    //   user.subscription.packageType = transactionDetails.packageType;
+
+    //   transactionRecordData.subscriptionStartDate = subscriptionDates.startDate;
+    //   transactionRecordData.subscriptionExpiryDate = subscriptionDates.expiryDate;
+    //   transactionRecordData.purchaseType = transactionDetails.packageType;
+
+    //   subject = `✅ You're Subscribed – ${transactionDetails.packageType} Plan Activated`;
+    //   emailBody = `
+    //     <p>Hi ${user.name || ''},</p>
+    //     <p>Welcome aboard! You've successfully subscribed to Labmate on the <strong>${transactionDetails.packageType}</strong> plan.</p>
+    //     <ul>
+    //       <li><strong>Start Date:</strong> ${subscriptionDates.startDate.toDateString()}</li>
+    //       <li><strong>Expiry Date:</strong> ${subscriptionDates.expiryDate.toDateString()}</li>
+    //     </ul>
+    //     <p>During your subscription, enjoy:</p>
+    //     <ul>
+    //       <li>🔬 Unlimited lab and imaging interpretations</li>
+    //       <li>🔒 Strong encryption and privacy-first design</li>
+    //       <li>📤 PDF export and email delivery of reports</li>
+    //     </ul>
+    //     <p>Need help or have questions? Just reply to this email or reach out to us at <a href="mailto:support@labmate.docspace.co.ke">support@labmate.docspace.co.ke</a>.</p>
+    //     <p>— The Labmate Team</p>
+    //   `;
+    // }
+
     if (purchaseType === 'single_interpretation_credit') {
       user.singleLabInterpretationsRemaining += 4;
-
+    
       subject = '🎉 Thank You for Your Purchase – 4 More Interpretations Added';
       emailBody = `
-        <p>Hi ${user.name || ''},</p>
-        <p>Thanks for your purchase! We've added <strong>4 more lab interpretation credits</strong> to your account.</p>
-        <p>Use them anytime to get private, AI-powered insights from your lab tests.</p>
-        <p>Need help? Just reply to this email or reach us at <a href="mailto:support@labmate.docspace.co.ke">support@labmate.docspace.co.ke</a>.</p>
-        <p>— The Labmate Team</p>
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; background-color: #f9f9f9; border-radius: 8px;">
+          <div style="text-align: center; margin-bottom: 20px;">
+            <img src="https://labmate.docspace.co.ke/labmatelogo.png" alt="Labmate Logo" style="max-width: 120px;" />
+          </div>
+    
+          <h2 style="color: #2c3e50;">Hi ${user.name || 'there'},</h2>
+          <p style="font-size: 16px; color: #333;">
+            Thanks for your purchase! We've just added <strong>4 more lab interpretation credits</strong> to your account ✅
+          </p>
+    
+          <p style="font-size: 16px; color: #333;">
+            You can use them anytime to privately interpret your lab results with AI-powered clarity.
+          </p>
+    
+          <p style="font-size: 16px; color: #333;">
+            Need help? Just reply to this email or reach us at 
+            <a href="mailto:support@labmate.docspace.co.ke" style="color: #007bff;">support@labmate.docspace.co.ke</a>.
+          </p>
+    
+          <p style="font-size: 15px; color: #777; margin-top: 30px;">— The Labmate Team</p>
+        </div>
       `;
-
+    
     } else if (purchaseType === 'subscription') {
       let subscriptionDates;
       try {
@@ -516,36 +582,52 @@ router.post('/purchase-success', async (req, res) => {
       } catch (error) {
         return res.status(400).json({ message: error.message });
       }
-
+    
       user.subscription.isSubscribed = true;
       user.subscription.transactionId = transactionDetails.transactionId;
       user.subscription.amount = transactionDetails.amount;
       user.subscription.startDate = subscriptionDates.startDate;
       user.subscription.expiryDate = subscriptionDates.expiryDate;
       user.subscription.packageType = transactionDetails.packageType;
-
+    
       transactionRecordData.subscriptionStartDate = subscriptionDates.startDate;
       transactionRecordData.subscriptionExpiryDate = subscriptionDates.expiryDate;
       transactionRecordData.purchaseType = transactionDetails.packageType;
-
+    
       subject = `✅ You're Subscribed – ${transactionDetails.packageType} Plan Activated`;
       emailBody = `
-        <p>Hi ${user.name || ''},</p>
-        <p>Welcome aboard! You've successfully subscribed to Labmate on the <strong>${transactionDetails.packageType}</strong> plan.</p>
-        <ul>
-          <li><strong>Start Date:</strong> ${subscriptionDates.startDate.toDateString()}</li>
-          <li><strong>Expiry Date:</strong> ${subscriptionDates.expiryDate.toDateString()}</li>
-        </ul>
-        <p>During your subscription, enjoy:</p>
-        <ul>
-          <li>🔬 Unlimited lab and imaging interpretations</li>
-          <li>🔒 Strong encryption and privacy-first design</li>
-          <li>📤 PDF export and email delivery of reports</li>
-        </ul>
-        <p>Need help or have questions? Just reply to this email or reach out to us at <a href="mailto:support@labmate.docspace.co.ke">support@labmate.docspace.co.ke</a>.</p>
-        <p>— The Labmate Team</p>
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; background-color: #f9f9f9; border-radius: 8px;">
+          <div style="text-align: center; margin-bottom: 20px;">
+            <img src="https://labmate.docspace.co.ke/labmatelogo.png" alt="Labmate Logo" style="max-width: 120px;" />
+          </div>
+    
+          <h2 style="color: #2c3e50;">Hi ${user.name || 'there'},</h2>
+          <p style="font-size: 16px; color: #333;">
+            Welcome aboard! You've successfully subscribed to Labmate on the <strong>${transactionDetails.packageType}</strong> plan 🎉
+          </p>
+    
+          <ul style="font-size: 15px; color: #333; padding-left: 20px;">
+            <li><strong>Start Date:</strong> ${subscriptionDates.startDate.toDateString()}</li>
+            <li><strong>Expiry Date:</strong> ${subscriptionDates.expiryDate.toDateString()}</li>
+          </ul>
+    
+          <p style="font-size: 16px; color: #333;">Here’s what you now have access to:</p>
+          <ul style="font-size: 15px; color: #333; padding-left: 20px;">
+            <li>🔬 Unlimited lab and imaging interpretations</li>
+            <li>🔒 Strong encryption and privacy-first design</li>
+            <li>📤 PDF export and email delivery of reports</li>
+          </ul>
+    
+          <p style="font-size: 16px; color: #333;">
+            Need help? Just reply to this email or reach us at 
+            <a href="mailto:support@labmate.docspace.co.ke" style="color: #007bff;">support@labmate.docspace.co.ke</a>.
+          </p>
+    
+          <p style="font-size: 15px; color: #777; margin-top: 30px;">— The Labmate Team</p>
+        </div>
       `;
     }
+    
 
     // Save user and transaction first
     await user.save();
