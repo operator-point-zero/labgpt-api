@@ -13,14 +13,14 @@
         "crypto": "^1.0.1",
         "dotenv": "^16.3.1",
         "express": "^4.21.2",
-        "html-pdf": "^3.0.1",
         "marked": "^15.0.12",
         "mongoose": "^8.15.1",
         "morgan": "^1.10.0",
         "nodemailer": "^7.0.3",
         "openai": "^4.0.0",
         "pdfkit": "^0.17.1",
-        "playwright": "^1.52.0"
+        "playwright": "^1.52.0",
+        "puppeteer": "^24.11.1"
     },
     "devDependencies": {
         "nodemon": "^3.0.1"
