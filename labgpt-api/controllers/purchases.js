@@ -671,7 +671,6 @@ async function sendEmailWithRetry(mailOptions, maxRetries = 3) {
 //     res.status(500).json({ message: 'Server error during purchase processing.' });
 //   }
 // });
-
 router.post('/purchase-success', async (req, res) => {
   const { userId, purchaseType, transactionDetails } = req.body;
 
@@ -691,13 +690,7 @@ router.post('/purchase-success', async (req, res) => {
     const user = await User.findById(userId);
     if (!user) return res.status(404).json({ message: 'User not found.' });
 
-    let transactionRecordData = {
-      userId,
-      transactionId: transactionDetails.transactionId,
-      amount: transactionDetails.amount,
-      purchaseType,
-      purchaseDate: new Date()
-    };
+
 
     let emailBody = '';
     let subject = '';
@@ -745,10 +738,6 @@ router.post('/purchase-success', async (req, res) => {
       user.subscription.expiryDate = subscriptionDates.expiryDate;
       user.subscription.packageType = transactionDetails.packageType;
     
-      transactionRecordData.subscriptionStartDate = subscriptionDates.startDate;
-      transactionRecordData.subscriptionExpiryDate = subscriptionDates.expiryDate;
-      transactionRecordData.purchaseType = transactionDetails.packageType;
-    
       subject = `✅ You're Subscribed – ${transactionDetails.packageType} Plan Activated`;
       emailBody = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; background-color: #f9f9f9; border-radius: 8px;">
@@ -783,10 +772,8 @@ router.post('/purchase-success', async (req, res) => {
       `;
     }
 
-    // Save user and transaction first
+    // Save user changes
     await user.save();
-    const newTransaction = new Transaction(transactionRecordData);
-    await newTransaction.save();
 
     // Try to send email with retry logic
     const mailOptions = {
@@ -810,9 +797,8 @@ router.post('/purchase-success', async (req, res) => {
     }
 
     res.status(200).json({
-      message: 'User profile and transaction recorded successfully.',
-      user,
-      transaction: newTransaction
+      message: 'User profile updated successfully.',
+      user
     });
 
   } catch (error) {
