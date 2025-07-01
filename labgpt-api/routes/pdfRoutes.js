@@ -2439,23 +2439,12 @@ async function markdownToPDF(markdownText, filename = 'document.pdf') {
     // Puppeteer launch options, crucial for Render and other containerized environments.
     const puppeteerOptions = {
       headless: true,
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/opt/render/.cache/puppeteer/chrome/linux-138.0.7204.49/chrome-linux64/chrome',
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--single-process',
-        '--disable-gpu'
-      ]
-      // args: [
-      //   '--no-sandbox',
-      //   '--disable-setuid-sandbox',
-      //   '--disable-dev-shm-usage', // Overcomes limited resource issues
-      //   '--single-process', // May reduce memory usage
-      // ],
+        '--disable-dev-shm-usage', // Overcomes limited resource issues
+        '--single-process', // May reduce memory usage
+      ],
     };
     log.debug('🚀 Launching Puppeteer browser', puppeteerOptions.args);
     browser = await puppeteer.launch(puppeteerOptions);
