@@ -4,8 +4,6 @@
     "description": "API to interpret medical lab results using OpenAI",
     "main": "server.js",
     "scripts": {
-        "build": "npx puppeteer browsers install chrome",
-        "postinstall": "npx puppeteer browsers install chrome --platform=linux --force",
         "start": "node server.js",
         "dev": "nodemon server.js"
     },
