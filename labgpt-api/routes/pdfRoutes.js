@@ -3763,9 +3763,16 @@ async function markdownToPDF(markdownText, filename = 'document.pdf') {
         italic: await pdfDoc.embedFont(fontBytes.italic),
     };
 
+    // const testInfo = extractTestInfo(markdownText);
+    // const logoUrl = 'https://labmate.docspace.co.ke/labmatelogo.png';
+    // const logoBytes = await fetch(logoUrl).then(res => res.arrayBuffer());
+    // const logoImage = await pdfDoc.embedPng(logoBytes);
+    // const resources = { pdfDoc, fonts, logoImage };
+
     const testInfo = extractTestInfo(markdownText);
-    const logoUrl = 'https://labmate.docspace.co.ke/labmatelogo.png';
-    const logoBytes = await fetch(logoUrl).then(res => res.arrayBuffer());
+    // ⬇️ Load the logo from a local file instead of a URL
+    const logoPath = path.join(__dirname, '../assets/labmatelogo.png');
+    const logoBytes = fs.readFileSync(logoPath);
     const logoImage = await pdfDoc.embedPng(logoBytes);
     const resources = { pdfDoc, fonts, logoImage };
     
