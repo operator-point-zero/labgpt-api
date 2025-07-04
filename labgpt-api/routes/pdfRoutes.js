@@ -3543,95 +3543,155 @@ const express = require('express');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 const { PDFDocument, rgb } = require('pdf-lib');
-// --- NEW DEPENDENCIES ---
 const fetch = require('node-fetch');
 const fontkit = require('fontkit'); // For custom font support
 const fs = require('fs');
 const path = require('path');
-// --- END NEW DEPENDENCIES ---
 const { marked } = require('marked');
 
 const router = express.Router();
 
-// LOGGING SETUP (unchanged)
-// ... (omitted for brevity)
-const log = { info: console.log, error: console.error, warn: console.warn, debug: console.log };
+// LOGGING SETUP
+const log = {
+    info: (message, data = null) => {
+        const timestamp = new Date().toISOString();
+        console.log(`[${timestamp}] INFO: ${message}`);
+        if (data) console.log('Data:', JSON.stringify(data, null, 2));
+    },
+    error: (message, error = null) => {
+        const timestamp = new Date().toISOString();
+        console.error(`[${timestamp}] ERROR: ${message}`);
+        if (error) {
+            console.error('Error details:', error.message);
+            console.error('Stack trace:', error.stack);
+        }
+    },
+    warn: (message, data = null) => {
+        const timestamp = new Date().toISOString();
+        console.warn(`[${timestamp}] WARN: ${message}`);
+        if (data) console.warn('Data:', data);
+    },
+    debug: (message, data = null) => {
+        const timestamp = new Date().toISOString();
+        console.log(`[${timestamp}] DEBUG: ${message}`);
+        if (data) console.log('Debug data:', JSON.stringify(data, null, 2));
+    }
+};
 
+// EMAIL SETUP
+const emailConfig = {
+    host: 'labmate.docspace.co.ke',
+    port: 465,
+    secure: true,
+    auth: {
+        user: process.env.RESULTS_USER,
+        pass: process.env.RESULTS_PASS
+    }
+};
 
-// EMAIL SETUP (unchanged)
-// ... (omitted for brevity)
-const emailConfig = { auth: { user: process.env.RESULTS_USER } };
+// DECRYPT FUNCTION
+function decrypt(encryptedData, clientId) {
+    try {
+        log.debug('🔓 Starting decryption process', { encryptedDataLength: encryptedData.length, clientIdLength: clientId.length });
+        const data = Buffer.from(encryptedData, 'base64');
+        if (data.length < 64) {
+            throw new Error(`Data too short: ${data.length} bytes (minimum 64 required)`);
+        }
+        const salt = data.slice(0, 16);
+        const iv = data.slice(16, 32);
+        const authTag = data.slice(32, 64);
+        const encrypted = data.slice(64);
+        const encKey = crypto.pbkdf2Sync(clientId, salt, 10000, 32, 'sha256');
+        const hmacKey = crypto.pbkdf2Sync(clientId + 'hmac', salt, 10000, 32, 'sha256');
+        const hmacInput = Buffer.concat([salt, iv, encrypted]);
+        const expectedTag = crypto.createHmac('sha256', hmacKey).update(hmacInput).digest();
+        if (!authTag.equals(expectedTag)) {
+            throw new Error('HMAC verification failed - data may be corrupted or tampered with');
+        }
+        const decipher = crypto.createDecipheriv('aes-256-cbc', encKey, iv);
+        let decrypted = decipher.update(encrypted, null, 'utf8');
+        decrypted += decipher.final('utf8');
+        log.info('✅ Decryption successful');
+        return decrypted;
+    } catch (error) {
+        log.error('❌ Decryption failed', error);
+        throw new Error(`Decryption failed: ${error.message}`);
+    }
+}
 
-
-// DECRYPT FUNCTION (unchanged)
-// ... (omitted for brevity)
-function decrypt(encryptedData, clientId) { /* ... */ return "Decrypted Text"; }
-
-
-// EXTRACT TEST TYPE AND FORMAT FROM AI RESPONSE (unchanged)
-// ... (omitted for brevity)
-function extractTestInfo(markdownText) { /* ... */ return { testType: 'Medical Report', format: 'narrative', isValidTest: true }; }
-
+// EXTRACT TEST TYPE AND FORMAT FROM AI RESPONSE
+function extractTestInfo(markdownText) {
+    try {
+        const jsonMatch = markdownText.match(/```json\s*({[\s\S]*?})\s*```/);
+        if (jsonMatch) {
+            try {
+                const parsedJson = JSON.parse(jsonMatch[1]);
+                return {
+                    testType: parsedJson.testType || 'Medical Report',
+                    format: parsedJson.format || 'narrative',
+                    isValidTest: !!parsedJson.isValidTest
+                };
+            } catch (err) {
+                log.warn('Failed to parse JSON from AI response, using defaults');
+            }
+        }
+        const hasTable = markdownText.includes('|') && markdownText.includes('---');
+        const hasStructuredData = /\d+\.?\d*\s*(mg\/dL|g\/dL|mmol\/L|IU\/L|ng\/mL)/i.test(markdownText);
+        return {
+            testType: 'Medical Report',
+            format: (hasTable || hasStructuredData) ? 'structured' : 'narrative',
+            isValidTest: true
+        };
+    } catch (error) {
+        log.warn('Could not extract test info, using defaults');
+        return { testType: 'Medical Report', format: 'narrative', isValidTest: true };
+    }
+}
 
 // ==========================================================================================
-// START: PDF-LIB REPLACEMENT WITH CUSTOM FONTS
+// PDF-LIB IMPLEMENTATION WITH CUSTOM FONTS
 // ==========================================================================================
 
-// --- PDF STYLING CONSTANTS (unchanged) ---
+// PDF STYLING CONSTANTS
 const styles = {
     colors: {
-        primary: rgb(0.17, 0.24, 0.31), // #2c3e50
-        secondary: rgb(0.2, 0.6, 0.85), // #3498db
-        text: rgb(0.2, 0.2, 0.2), // #333333
-        lightText: rgb(0.5, 0.55, 0.55), // #7f8c8d
-        border: rgb(0.93, 0.94, 0.95), // #ecf0f1
-        tableHeader: rgb(0.2, 0.28, 0.36), // #34495e
-        white: rgb(1, 1, 1),
+        primary: rgb(0.17, 0.24, 0.31), text: rgb(0.2, 0.2, 0.2),
+        lightText: rgb(0.5, 0.55, 0.55), border: rgb(0.93, 0.94, 0.95),
+        tableHeader: rgb(0.2, 0.28, 0.36), white: rgb(1, 1, 1),
     },
     fontSizes: { h1: 24, h2: 18, p: 10, tableHeader: 11, tableCell: 10, footer: 8 },
     lineHeight: 1.5,
     margins: { top: 72, bottom: 72, left: 57, right: 57 },
 };
 
-// --- NEW: PREPROCESS MARKDOWN TO REPLACE EMOJIS ---
+// PREPROCESS MARKDOWN TO REPLACE EMOJIS
 function preprocessMarkdown(markdownText) {
     let processedText = markdownText;
     const replacements = {
-        '🧪': '**Test:**',
-        '🔍': '**Findings:**',
-        '🧑‍⚕️': '**Doctor\'s Note:**',
-        '📝': '**Note:**',
-        '❌': '**Result (Abnormal):**',
-        '✅': '**Result (Normal):**',
-        '⚠️': '**Warning:**',
-        '📊': '**Data:**',
-        '🩺': '**Medical:**',
-        '📄': '**Report:**',
-        '📌': '**Key Point:**'
+        '🧪': '**Test:**', '🔍': '**Findings:**', '🧑‍⚕️': '**Doctor\'s Note:**',
+        '📝': '**Note:**', '❌': '**Result (Abnormal):**', '✅': '**Result (Normal):**',
+        '⚠️': '**Warning:**', '📊': '**Data:**', '🩺': '**Medical:**',
+        '📄': '**Report:**', '📌': '**Key Point:**'
     };
-
     for (const [emoji, text] of Object.entries(replacements)) {
         processedText = processedText.replace(new RegExp(emoji, 'g'), text);
     }
     return processedText;
 }
 
-
-// --- UPDATED: LOAD FONT FILES FROM DISK ---
+// LOAD FONT FILES FROM DISK
 const fontBytes = {
     regular: fs.readFileSync(path.join(__dirname, '../fonts/NotoSans-Regular.ttf')),
     bold: fs.readFileSync(path.join(__dirname, '../fonts/NotoSans-Bold.ttf')),
     italic: fs.readFileSync(path.join(__dirname, '../fonts/NotoSans-Italic.ttf')),
 };
 
-
-// --- PDF-LIB HELPER FUNCTIONS (wrapText is unchanged) ---
+// TEXT WRAPPING HELPER
 function wrapText(text, maxWidth, font, fontSize) {
-    // ... (This function is unchanged, but will now work correctly with the new font)
     const words = text.split(' ');
     let lines = [];
+    if (!words.length) return lines;
     let currentLine = words.shift();
-
     for (const word of words) {
         const lineWithWord = `${currentLine} ${word}`;
         if (font.widthOfTextAtSize(lineWithWord, fontSize) <= maxWidth) {
@@ -3645,76 +3705,190 @@ function wrapText(text, maxWidth, font, fontSize) {
     return lines;
 }
 
-// --- UPDATED: Header/Footer helpers now receive fonts ---
+// PDF HEADER AND FOOTER DRAWING HELPERS
 async function drawHeader(page, resources, testInfo) {
-    // ... (code is similar but now uses resources.fonts.bold etc.)
+    const { width } = page.getSize();
+    const { fonts, logoImage } = resources;
+    const currentDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    
+    const logoDims = logoImage.scale(0.25);
+    page.drawImage(logoImage, {
+        x: (width - logoDims.width) / 2, y: height - styles.margins.top + 70,
+        width: logoDims.width, height: logoDims.height,
+    });
+    
+    page.drawText(testInfo.testType, {
+        x: 0, y: height - styles.margins.top + 30,
+        font: fonts.bold, size: styles.fontSizes.h1, color: styles.colors.primary,
+        width: width, align: 'center',
+    });
+
+    page.drawText(`Generated on ${currentDate}`, {
+        x: 0, y: height - styles.margins.top + 15,
+        font: fonts.regular, size: styles.fontSizes.p, color: styles.colors.lightText,
+        width: width, align: 'center',
+    });
+
+    page.drawLine({
+        start: { x: styles.margins.left, y: height - styles.margins.top },
+        end: { x: width - styles.margins.right, y: height - styles.margins.top },
+        thickness: 2, color: styles.colors.primary,
+    });
 }
+
 async function drawFooter(page, pageNumber, totalPages, resources) {
-    // ... (code is similar but now uses resources.fonts.regular etc.)
+    const { width } = page.getSize();
+    const { fonts } = resources;
+    const footerText = `Page ${pageNumber} of ${totalPages} - Generated by DocSpace PDF Service`;
+    
+    page.drawText(footerText, {
+        x: 0, y: styles.margins.bottom - 20,
+        font: fonts.regular, size: styles.fontSizes.footer, color: styles.colors.lightText,
+        width: width, align: 'center',
+    });
 }
 
-
-/**
- * The main PDF generation function using pdf-lib.
- */
+// MAIN PDF GENERATION FUNCTION
 async function markdownToPDF(markdownText, filename = 'document.pdf') {
-    log.debug('📝 Starting markdown to PDF conversion using pdf-lib with custom fonts');
-
-    // --- UPDATED: PREPROCESS THE MARKDOWN FIRST ---
+    log.debug('📝 Starting markdown to PDF conversion with pdf-lib and custom fonts');
     const processedMarkdown = preprocessMarkdown(markdownText);
 
-    // 1. Setup Document and Resources
     const pdfDoc = await PDFDocument.create();
-    // --- UPDATED: REGISTER FONTKIT ---
     pdfDoc.registerFontkit(fontkit);
 
-    // --- UPDATED: EMBED CUSTOM FONTS ---
     const fonts = {
         regular: await pdfDoc.embedFont(fontBytes.regular),
         bold: await pdfDoc.embedFont(fontBytes.bold),
         italic: await pdfDoc.embedFont(fontBytes.italic),
     };
 
-    const testInfo = extractTestInfo(markdownText); // Use original markdown for info extraction
-
-    // Fetch and embed the logo
+    const testInfo = extractTestInfo(markdownText);
     const logoUrl = 'https://labmate.docspace.co.ke/labmatelogo.png';
     const logoBytes = await fetch(logoUrl).then(res => res.arrayBuffer());
     const logoImage = await pdfDoc.embedPng(logoBytes);
-
-    // Package resources for helper functions
     const resources = { pdfDoc, fonts, logoImage };
     
-    // 2. Initial Page Setup
     let page = pdfDoc.addPage();
     const { width, height } = page.getSize();
     const contentWidth = width - styles.margins.left - styles.margins.right;
-    let y = height - styles.margins.top - 100; // Start below header
-
-    await drawHeader(page, resources, testInfo);
+    let y = height - styles.margins.top - 50; 
     
-    // 3. Process and Render Content
-    // Use marked's lexer on the PROCESSED markdown
-    const tokens = marked.lexer(processedMarkdown);
-
     const checkAndAddNewPage = async (requiredHeight) => {
         if (y - requiredHeight < styles.margins.bottom) {
             page = pdfDoc.addPage();
-            y = height - styles.margins.top;
+            y = height - styles.margins.top - 20;
             await drawHeader(page, resources, testInfo);
         }
     };
+
+    await drawHeader(page, resources, testInfo);
     
-    // The rendering loop for tokens (headings, paragraphs, etc.) is largely the same,
-    // as it already uses the `fonts` object which now contains the correct font.
-    // ... (loop omitted for brevity, it remains logically the same)
+    const tokens = marked.lexer(processedMarkdown);
+
     for (const token of tokens) {
-        // ... all cases like 'heading', 'paragraph', 'list', 'table' remain
-        // they will now automatically use the Noto Sans font via the `fonts` object.
+        let text = 'text' in token ? token.text.replace(/&quot;/g, '"').replace(/&#39;/g, "'") : '';
+        switch (token.type) {
+            case 'heading':
+                await checkAndAddNewPage(50);
+                y -= 20;
+                page.drawText(text, {
+                    x: styles.margins.left, y, font: fonts.bold,
+                    size: token.depth === 1 ? styles.fontSizes.h1 : styles.fontSizes.h2,
+                    color: styles.colors.primary,
+                });
+                y -= (token.depth === 1 ? styles.fontSizes.h1 : styles.fontSizes.h2) * styles.lineHeight;
+                break;
+
+            case 'paragraph':
+                const lines = wrapText(text, contentWidth, fonts.regular, styles.fontSizes.p);
+                await checkAndAddNewPage(lines.length * styles.fontSizes.p * styles.lineHeight + 10);
+                y -= 10;
+                for (const line of lines) {
+                    page.drawText(line, {
+                        x: styles.margins.left, y, font: fonts.regular, size: styles.fontSizes.p,
+                        color: styles.colors.text, lineHeight: styles.fontSizes.p * styles.lineHeight,
+                    });
+                    y -= styles.fontSizes.p * styles.lineHeight;
+                }
+                break;
+            
+            case 'list':
+                await checkAndAddNewPage(token.items.length * 20);
+                y -= 10;
+                for(const item of token.items) {
+                    const itemLines = wrapText(item.text, contentWidth - 20, fonts.regular, styles.fontSizes.p);
+                    await checkAndAddNewPage(itemLines.length * styles.fontSizes.p * styles.lineHeight + 5);
+                    y -= 5;
+                    let lineY = y;
+                    page.drawText('•', { x: styles.margins.left, y: lineY, font: fonts.regular, size: styles.fontSizes.p });
+                    for(const line of itemLines) {
+                        page.drawText(line, {
+                            x: styles.margins.left + 20, y: lineY, font: fonts.regular,
+                            size: styles.fontSizes.p, lineHeight: styles.fontSizes.p * styles.lineHeight,
+                        });
+                        lineY -= styles.fontSizes.p * styles.lineHeight;
+                    }
+                    y = lineY;
+                }
+                break;
+
+            case 'table':
+                const header = token.header.map(h => h.text);
+                const rows = token.rows.map(row => row.map(cell => cell.text));
+                const numColumns = header.length;
+                if (numColumns === 0) continue;
+                const columnWidth = contentWidth / numColumns;
+                
+                await checkAndAddNewPage(40);
+                y -= 20;
+
+                const headerY = y;
+                page.drawRectangle({
+                    x: styles.margins.left, y: headerY - styles.fontSizes.tableHeader * styles.lineHeight * 0.7,
+                    width: contentWidth, height: styles.fontSizes.tableHeader * styles.lineHeight,
+                    color: styles.colors.tableHeader,
+                });
+                header.forEach((text, i) => {
+                    page.drawText(text, {
+                        x: styles.margins.left + (i * columnWidth) + 5, y: headerY,
+                        font: fonts.bold, size: styles.fontSizes.tableHeader, color: styles.colors.white,
+                    });
+                });
+                y -= styles.fontSizes.tableHeader * styles.lineHeight;
+
+                for (const row of rows) {
+                    let maxLines = 1;
+                    const wrappedCells = row.map(cellText => {
+                        const lines = wrapText(cellText, columnWidth - 10, fonts.regular, styles.fontSizes.tableCell);
+                        if (lines.length > maxLines) maxLines = lines.length;
+                        return lines;
+                    });
+                    
+                    const rowHeight = maxLines * styles.fontSizes.tableCell * styles.lineHeight;
+                    await checkAndAddNewPage(rowHeight + 5);
+                    y -= rowHeight;
+                    
+                    wrappedCells.forEach((lines, i) => {
+                        let cellY = y + (rowHeight - styles.fontSizes.tableCell);
+                        for (const line of lines) {
+                            page.drawText(line, {
+                                x: styles.margins.left + (i * columnWidth) + 5, y: cellY,
+                                font: fonts.regular, size: styles.fontSizes.tableCell, color: styles.colors.text
+                            });
+                            cellY -= styles.fontSizes.tableCell * styles.lineHeight;
+                        }
+                    });
+
+                    page.drawLine({
+                        start: { x: styles.margins.left, y: y - 2 }, end: { x: width - styles.margins.right, y: y - 2 },
+                        thickness: 0.5, color: styles.colors.border,
+                    });
+                    y-= 2;
+                }
+                break;
+        }
     }
 
-
-    // 4. Finalize: Add Footers
     const pages = pdfDoc.getPages();
     for (let i = 0; i < pages.length; i++) {
         await drawFooter(pages[i], i + 1, pages.length, resources);
@@ -3722,18 +3896,101 @@ async function markdownToPDF(markdownText, filename = 'document.pdf') {
     
     const pdfBytes = await pdfDoc.save();
     log.info('✅ PDF generated successfully with pdf-lib and custom fonts', {
-        pdfSize: `${(pdfBytes.length / 1024).toFixed(2)} KB`
+        pdfSize: `${(pdfBytes.length / 1024).toFixed(2)} KB`,
     });
     return Buffer.from(pdfBytes);
 }
 
-// ==========================================================================================
-// END: PDF-LIB REPLACEMENT
-// ==========================================================================================
+// PDF GENERATION ROUTE
+router.post('/generate', async (req, res) => {
+    const startTime = Date.now();
+    const requestId = Math.random().toString(36).substring(7);
 
+    log.info(`🚀 New PDF generation request [${requestId}]`);
 
-// PDF GENERATION ROUTE and HEALTH CHECK (unchanged)
-// ...
-router.post('/generate', async (req, res) => { /* ... */ });
-router.get('/health', (req, res) => { /* ... */ });
+    try {
+        const { encryptedContent, clientId, emailAddress, filename } = req.body;
+        if (!encryptedContent || !clientId || !emailAddress) {
+            return res.status(400).json({ error: 'Missing required fields' });
+        }
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(emailAddress)) {
+            return res.status(400).json({ error: 'Invalid email format' });
+        }
+
+        log.info(`🔓 Step 1: Decrypting content [${requestId}]`);
+        const aiInterpretation = decrypt(encryptedContent, clientId);
+        const testInfo = extractTestInfo(aiInterpretation);
+
+        log.info(`📄 Step 2: Generating PDF from AI interpretation [${requestId}]`);
+        const pdfBuffer = await markdownToPDF(aiInterpretation, filename);
+        
+        log.info(`📧 Step 3: Sending email [${requestId}]`);
+        const transporter = nodemailer.createTransport(emailConfig);
+        const mailOptions = {
+            from: emailConfig.auth.user,
+            to: emailAddress,
+            subject: `Your ${testInfo.testType} Report: ${filename || 'medical-report.pdf'}`,
+            html: `
+<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f4f7f6;">
+  <div style="text-align: center; padding: 20px; background-color: #ffffff;">
+    <img src="https://labmate.docspace.co.ke/labmatelogo.png" alt="LabMate Logo" style="max-width: 200px; height: auto;">
+  </div>
+  <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center;">
+    <h2 style="margin: 0; font-size: 24px;">📄 Your Medical Report is Ready!</h2>
+  </div>
+  <div style="background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px;">
+    <p>Your <strong>${testInfo.testType}</strong> has been successfully interpreted and is attached to this email.</p>
+    <div style="background: white; padding: 20px; border-radius: 8px; border-left: 4px solid #3498db; margin: 20px 0;">
+      <table style="width: 100%; border-collapse: collapse;">
+        <tr><td style="padding: 8px 0; border-bottom: 1px solid #ecf0f1;"><strong>📁 Filename:</strong></td><td style="padding: 8px 0; border-bottom: 1px solid #ecf0f1;">${filename || 'medical-report.pdf'}</td></tr>
+        <tr><td style="padding: 8px 0; border-bottom: 1px solid #ecf0f1;"><strong>🧪 Test Type:</strong></td><td style="padding: 8px 0; border-bottom: 1px solid #ecf0f1;">${testInfo.testType}</td></tr>
+        <tr><td style="padding: 8px 0; border-bottom: 1px solid #ecf0f1;"><strong>📅 Generated:</strong></td><td style="padding: 8px 0; border-bottom: 1px solid #ecf0f1;">${new Date().toLocaleString()}</td></tr>
+        <tr><td style="padding: 8px 0; border-bottom: 1px solid #ecf0f1;"><strong>📦 Size:</strong></td><td style="padding: 8px 0; border-bottom: 1px solid #ecf0f1;">${(pdfBuffer.length / 1024).toFixed(2)} KB</td></tr>
+        <tr><td style="padding: 8px 0;"><strong>🆔 Request ID:</strong></td><td style="padding: 8px 0;">${requestId}</td></tr>
+      </table>
+    </div>
+    <div style="background: #fff3cd; border: 1px solid #ffeaa7; color: #856404; padding: 15px; border-radius: 5px; margin: 20px 0;">
+      <p style="margin: 0;"><strong>⚠️ Important Disclaimer:</strong> This AI-generated interpretation is for informational purposes only and should not replace professional medical advice.</p>
+    </div>
+  </div>
+</div>`,
+            attachments: [{
+                filename: filename || 'medical-report.pdf',
+                content: pdfBuffer,
+                contentType: 'application/pdf'
+            }]
+        };
+        await transporter.sendMail(mailOptions);
+        
+        const duration = Date.now() - startTime;
+        log.info(`🎉 Request completed successfully [${requestId}]`, { duration: `${duration}ms` });
+        res.json({
+            success: true, message: 'Medical report PDF generated and sent successfully!', requestId,
+        });
+
+    } catch (error) {
+        const duration = Date.now() - startTime;
+        log.error(`💥 Request failed [${requestId}]`, { error: error.message, duration: `${duration}ms`, stack: error.stack });
+        let statusCode = 500; let errorType = 'INTERNAL_ERROR';
+        if (error.message.includes('Decryption failed')) { statusCode = 400; errorType = 'DECRYPTION_ERROR'; }
+        else if (error.message.includes('Email sending failed')) { statusCode = 503; errorType = 'EMAIL_ERROR'; }
+        else if (error.message.includes('PDF generation failed')) { statusCode = 500; errorType = 'PDF_ERROR'; }
+        res.status(statusCode).json({ error: error.message, errorType, requestId });
+    }
+});
+
+// HEALTH CHECK ROUTE
+router.get('/health', (req, res) => {
+    log.info('🏥 PDF service health check requested');
+    res.json({
+        status: 'OK',
+        service: 'PDF Generation Service (pdf-lib)',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        memory: process.memoryUsage(),
+        supportedFormats: ['structured', 'narrative']
+    });
+});
+
 module.exports = router;
