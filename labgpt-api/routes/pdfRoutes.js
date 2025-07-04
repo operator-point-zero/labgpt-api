@@ -3706,7 +3706,8 @@ function wrapText(text, maxWidth, font, fontSize) {
 }
 
 // PDF HEADER AND FOOTER DRAWING HELPERS
-async function drawHeader(page, resources, testInfo) {
+// ## FIX 1: Add 'height' as a parameter to the function signature.
+async function drawHeader(page, resources, testInfo, height) {
     const { width } = page.getSize();
     const { fonts, logoImage } = resources;
     const currentDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
@@ -3777,11 +3778,13 @@ async function markdownToPDF(markdownText, filename = 'document.pdf') {
         if (y - requiredHeight < styles.margins.bottom) {
             page = pdfDoc.addPage();
             y = height - styles.margins.top - 20;
-            await drawHeader(page, resources, testInfo);
+            // ## FIX 2: Pass 'height' when calling drawHeader for a new page.
+            await drawHeader(page, resources, testInfo, height);
         }
     };
 
-    await drawHeader(page, resources, testInfo);
+    // ## FIX 3: Pass 'height' when calling drawHeader for the first page.
+    await drawHeader(page, resources, testInfo, height);
     
     const tokens = marked.lexer(processedMarkdown);
 
