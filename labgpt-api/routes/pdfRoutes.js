@@ -3539,485 +3539,19 @@
 
 // module.exports = router;
 
-// const express = require('express');
-// const crypto = require('crypto');
-// const nodemailer = require('nodemailer');
-// const { PDFDocument, rgb } = require('pdf-lib');
-// const fetch = require('node-fetch');
-// const fontkit = require('fontkit'); // For custom font support
-// const fs = require('fs');
-// const path = require('path');
-// const { marked } = require('marked');
-
-// const router = express.Router();
-
-// // LOGGING SETUP
-// const log = {
-//     info: (message, data = null) => {
-//         const timestamp = new Date().toISOString();
-//         console.log(`[${timestamp}] INFO: ${message}`);
-//         if (data) console.log('Data:', JSON.stringify(data, null, 2));
-//     },
-//     error: (message, error = null) => {
-//         const timestamp = new Date().toISOString();
-//         console.error(`[${timestamp}] ERROR: ${message}`);
-//         if (error) {
-//             console.error('Error details:', error.message);
-//             console.error('Stack trace:', error.stack);
-//         }
-//     },
-//     warn: (message, data = null) => {
-//         const timestamp = new Date().toISOString();
-//         console.warn(`[${timestamp}] WARN: ${message}`);
-//         if (data) console.warn('Data:', data);
-//     },
-//     debug: (message, data = null) => {
-//         const timestamp = new Date().toISOString();
-//         console.log(`[${timestamp}] DEBUG: ${message}`);
-//         if (data) console.log('Debug data:', JSON.stringify(data, null, 2));
-//     }
-// };
-
-// // EMAIL SETUP
-// const emailConfig = {
-//     host: 'labmate.docspace.co.ke',
-//     port: 465,
-//     secure: true,
-//     auth: {
-//         user: process.env.RESULTS_USER,
-//         pass: process.env.RESULTS_PASS
-//     }
-// };
-
-// // DECRYPT FUNCTION
-// function decrypt(encryptedData, clientId) {
-//     try {
-//         log.debug('🔓 Starting decryption process', { encryptedDataLength: encryptedData.length, clientIdLength: clientId.length });
-//         const data = Buffer.from(encryptedData, 'base64');
-//         if (data.length < 64) {
-//             throw new Error(`Data too short: ${data.length} bytes (minimum 64 required)`);
-//         }
-//         const salt = data.slice(0, 16);
-//         const iv = data.slice(16, 32);
-//         const authTag = data.slice(32, 64);
-//         const encrypted = data.slice(64);
-//         const encKey = crypto.pbkdf2Sync(clientId, salt, 10000, 32, 'sha256');
-//         const hmacKey = crypto.pbkdf2Sync(clientId + 'hmac', salt, 10000, 32, 'sha256');
-//         const hmacInput = Buffer.concat([salt, iv, encrypted]);
-//         const expectedTag = crypto.createHmac('sha256', hmacKey).update(hmacInput).digest();
-//         if (!authTag.equals(expectedTag)) {
-//             throw new Error('HMAC verification failed - data may be corrupted or tampered with');
-//         }
-//         const decipher = crypto.createDecipheriv('aes-256-cbc', encKey, iv);
-//         let decrypted = decipher.update(encrypted, null, 'utf8');
-//         decrypted += decipher.final('utf8');
-//         log.info('✅ Decryption successful');
-//         return decrypted;
-//     } catch (error) {
-//         log.error('❌ Decryption failed', error);
-//         throw new Error(`Decryption failed: ${error.message}`);
-//     }
-// }
-
-// // EXTRACT TEST TYPE AND FORMAT FROM AI RESPONSE
-// function extractTestInfo(markdownText) {
-//     try {
-//         const jsonMatch = markdownText.match(/```json\s*({[\s\S]*?})\s*```/);
-//         if (jsonMatch) {
-//             try {
-//                 const parsedJson = JSON.parse(jsonMatch[1]);
-//                 return {
-//                     testType: parsedJson.testType || 'Medical Report',
-//                     format: parsedJson.format || 'narrative',
-//                     isValidTest: !!parsedJson.isValidTest
-//                 };
-//             } catch (err) {
-//                 log.warn('Failed to parse JSON from AI response, using defaults');
-//             }
-//         }
-//         const hasTable = markdownText.includes('|') && markdownText.includes('---');
-//         const hasStructuredData = /\d+\.?\d*\s*(mg\/dL|g\/dL|mmol\/L|IU\/L|ng\/mL)/i.test(markdownText);
-//         return {
-//             testType: 'Medical Report',
-//             format: (hasTable || hasStructuredData) ? 'structured' : 'narrative',
-//             isValidTest: true
-//         };
-//     } catch (error) {
-//         log.warn('Could not extract test info, using defaults');
-//         return { testType: 'Medical Report', format: 'narrative', isValidTest: true };
-//     }
-// }
-
-// // ==========================================================================================
-// // PDF-LIB IMPLEMENTATION WITH CUSTOM FONTS
-// // ==========================================================================================
-
-// // PDF STYLING CONSTANTS
-// const styles = {
-//     colors: {
-//         primary: rgb(0.17, 0.24, 0.31), text: rgb(0.2, 0.2, 0.2),
-//         lightText: rgb(0.5, 0.55, 0.55), border: rgb(0.93, 0.94, 0.95),
-//         tableHeader: rgb(0.2, 0.28, 0.36), white: rgb(1, 1, 1),
-//     },
-//     fontSizes: { h1: 24, h2: 18, p: 10, tableHeader: 11, tableCell: 10, footer: 8 },
-//     lineHeight: 1.5,
-//     margins: { top: 72, bottom: 72, left: 57, right: 57 },
-// };
-
-// // PREPROCESS MARKDOWN TO REPLACE EMOJIS
-// function preprocessMarkdown(markdownText) {
-//     let processedText = markdownText;
-//     const replacements = {
-//         '🧪': '**Test:**', '🔍': '**Findings:**', '🧑‍⚕️': '**Doctor\'s Note:**',
-//         '📝': '**Note:**', '❌': '**Result (Abnormal):**', '✅': '**Result (Normal):**',
-//         '⚠️': '**Warning:**', '📊': '**Data:**', '🩺': '**Medical:**',
-//         '📄': '**Report:**', '📌': '**Key Point:**'
-//     };
-//     for (const [emoji, text] of Object.entries(replacements)) {
-//         processedText = processedText.replace(new RegExp(emoji, 'g'), text);
-//     }
-//     return processedText;
-// }
-
-// // LOAD FONT FILES FROM DISK
-// const fontBytes = {
-//     regular: fs.readFileSync(path.join(__dirname, '../fonts/NotoSans-Regular.ttf')),
-//     bold: fs.readFileSync(path.join(__dirname, '../fonts/NotoSans-Bold.ttf')),
-//     italic: fs.readFileSync(path.join(__dirname, '../fonts/NotoSans-Italic.ttf')),
-// };
-
-// // TEXT WRAPPING HELPER
-// function wrapText(text, maxWidth, font, fontSize) {
-//     const words = text.split(' ');
-//     let lines = [];
-//     if (!words.length) return lines;
-//     let currentLine = words.shift();
-//     for (const word of words) {
-//         const lineWithWord = `${currentLine} ${word}`;
-//         if (font.widthOfTextAtSize(lineWithWord, fontSize) <= maxWidth) {
-//             currentLine = lineWithWord;
-//         } else {
-//             lines.push(currentLine);
-//             currentLine = word;
-//         }
-//     }
-//     lines.push(currentLine);
-//     return lines;
-// }
-
-// // PDF HEADER AND FOOTER DRAWING HELPERS
-// // ## FIX 1: Add 'height' as a parameter to the function signature.
-// async function drawHeader(page, resources, testInfo, height) {
-//     const { width } = page.getSize();
-//     const { fonts, logoImage } = resources;
-//     const currentDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-    
-//     const logoDims = logoImage.scale(0.25);
-//     page.drawImage(logoImage, {
-//         x: (width - logoDims.width) / 2, y: height - styles.margins.top + 70,
-//         width: logoDims.width, height: logoDims.height,
-//     });
-    
-//     page.drawText(testInfo.testType, {
-//         x: 0, y: height - styles.margins.top + 30,
-//         font: fonts.bold, size: styles.fontSizes.h1, color: styles.colors.primary,
-//         width: width, align: 'center',
-//     });
-
-//     page.drawText(`Generated on ${currentDate}`, {
-//         x: 0, y: height - styles.margins.top + 15,
-//         font: fonts.regular, size: styles.fontSizes.p, color: styles.colors.lightText,
-//         width: width, align: 'center',
-//     });
-
-//     page.drawLine({
-//         start: { x: styles.margins.left, y: height - styles.margins.top },
-//         end: { x: width - styles.margins.right, y: height - styles.margins.top },
-//         thickness: 2, color: styles.colors.primary,
-//     });
-// }
-
-// async function drawFooter(page, pageNumber, totalPages, resources) {
-//     const { width } = page.getSize();
-//     const { fonts } = resources;
-//     const footerText = `Page ${pageNumber} of ${totalPages} - Generated by DocSpace PDF Service`;
-    
-//     page.drawText(footerText, {
-//         x: 0, y: styles.margins.bottom - 20,
-//         font: fonts.regular, size: styles.fontSizes.footer, color: styles.colors.lightText,
-//         width: width, align: 'center',
-//     });
-// }
-
-// // MAIN PDF GENERATION FUNCTION
-// async function markdownToPDF(markdownText, filename = 'document.pdf') {
-//     log.debug('📝 Starting markdown to PDF conversion with pdf-lib and custom fonts');
-//     const processedMarkdown = preprocessMarkdown(markdownText);
-
-//     const pdfDoc = await PDFDocument.create();
-//     pdfDoc.registerFontkit(fontkit);
-
-//     const fonts = {
-//         regular: await pdfDoc.embedFont(fontBytes.regular),
-//         bold: await pdfDoc.embedFont(fontBytes.bold),
-//         italic: await pdfDoc.embedFont(fontBytes.italic),
-//     };
-
-//     // const testInfo = extractTestInfo(markdownText);
-//     // const logoUrl = 'https://labmate.docspace.co.ke/labmatelogo.png';
-//     // const logoBytes = await fetch(logoUrl).then(res => res.arrayBuffer());
-//     // const logoImage = await pdfDoc.embedPng(logoBytes);
-//     // const resources = { pdfDoc, fonts, logoImage };
-
-//     const testInfo = extractTestInfo(markdownText);
-//     // ⬇️ Load the logo from a local file instead of a URL
-//     const logoPath = path.join(__dirname, '../assets/labmatelogo.png');
-//     const logoBytes = fs.readFileSync(logoPath);
-//     const logoImage = await pdfDoc.embedPng(logoBytes);
-//     const resources = { pdfDoc, fonts, logoImage };
-    
-//     let page = pdfDoc.addPage();
-//     const { width, height } = page.getSize();
-//     const contentWidth = width - styles.margins.left - styles.margins.right;
-//     let y = height - styles.margins.top - 50; 
-    
-//     const checkAndAddNewPage = async (requiredHeight) => {
-//         if (y - requiredHeight < styles.margins.bottom) {
-//             page = pdfDoc.addPage();
-//             y = height - styles.margins.top - 20;
-//             // ## FIX 2: Pass 'height' when calling drawHeader for a new page.
-//             await drawHeader(page, resources, testInfo, height);
-//         }
-//     };
-
-//     // ## FIX 3: Pass 'height' when calling drawHeader for the first page.
-//     await drawHeader(page, resources, testInfo, height);
-    
-//     const tokens = marked.lexer(processedMarkdown);
-
-//     for (const token of tokens) {
-//         let text = 'text' in token ? token.text.replace(/&quot;/g, '"').replace(/&#39;/g, "'") : '';
-//         switch (token.type) {
-//             case 'heading':
-//                 await checkAndAddNewPage(50);
-//                 y -= 20;
-//                 page.drawText(text, {
-//                     x: styles.margins.left, y, font: fonts.bold,
-//                     size: token.depth === 1 ? styles.fontSizes.h1 : styles.fontSizes.h2,
-//                     color: styles.colors.primary,
-//                 });
-//                 y -= (token.depth === 1 ? styles.fontSizes.h1 : styles.fontSizes.h2) * styles.lineHeight;
-//                 break;
-
-//             case 'paragraph':
-//                 const lines = wrapText(text, contentWidth, fonts.regular, styles.fontSizes.p);
-//                 await checkAndAddNewPage(lines.length * styles.fontSizes.p * styles.lineHeight + 10);
-//                 y -= 10;
-//                 for (const line of lines) {
-//                     page.drawText(line, {
-//                         x: styles.margins.left, y, font: fonts.regular, size: styles.fontSizes.p,
-//                         color: styles.colors.text, lineHeight: styles.fontSizes.p * styles.lineHeight,
-//                     });
-//                     y -= styles.fontSizes.p * styles.lineHeight;
-//                 }
-//                 break;
-            
-//             case 'list':
-//                 await checkAndAddNewPage(token.items.length * 20);
-//                 y -= 10;
-//                 for(const item of token.items) {
-//                     const itemLines = wrapText(item.text, contentWidth - 20, fonts.regular, styles.fontSizes.p);
-//                     await checkAndAddNewPage(itemLines.length * styles.fontSizes.p * styles.lineHeight + 5);
-//                     y -= 5;
-//                     let lineY = y;
-//                     page.drawText('•', { x: styles.margins.left, y: lineY, font: fonts.regular, size: styles.fontSizes.p });
-//                     for(const line of itemLines) {
-//                         page.drawText(line, {
-//                             x: styles.margins.left + 20, y: lineY, font: fonts.regular,
-//                             size: styles.fontSizes.p, lineHeight: styles.fontSizes.p * styles.lineHeight,
-//                         });
-//                         lineY -= styles.fontSizes.p * styles.lineHeight;
-//                     }
-//                     y = lineY;
-//                 }
-//                 break;
-
-//             case 'table':
-//                 const header = token.header.map(h => h.text);
-//                 const rows = token.rows.map(row => row.map(cell => cell.text));
-//                 const numColumns = header.length;
-//                 if (numColumns === 0) continue;
-//                 const columnWidth = contentWidth / numColumns;
-                
-//                 await checkAndAddNewPage(40);
-//                 y -= 20;
-
-//                 const headerY = y;
-//                 page.drawRectangle({
-//                     x: styles.margins.left, y: headerY - styles.fontSizes.tableHeader * styles.lineHeight * 0.7,
-//                     width: contentWidth, height: styles.fontSizes.tableHeader * styles.lineHeight,
-//                     color: styles.colors.tableHeader,
-//                 });
-//                 header.forEach((text, i) => {
-//                     page.drawText(text, {
-//                         x: styles.margins.left + (i * columnWidth) + 5, y: headerY,
-//                         font: fonts.bold, size: styles.fontSizes.tableHeader, color: styles.colors.white,
-//                     });
-//                 });
-//                 y -= styles.fontSizes.tableHeader * styles.lineHeight;
-
-//                 for (const row of rows) {
-//                     let maxLines = 1;
-//                     const wrappedCells = row.map(cellText => {
-//                         const lines = wrapText(cellText, columnWidth - 10, fonts.regular, styles.fontSizes.tableCell);
-//                         if (lines.length > maxLines) maxLines = lines.length;
-//                         return lines;
-//                     });
-                    
-//                     const rowHeight = maxLines * styles.fontSizes.tableCell * styles.lineHeight;
-//                     await checkAndAddNewPage(rowHeight + 5);
-//                     y -= rowHeight;
-                    
-//                     wrappedCells.forEach((lines, i) => {
-//                         let cellY = y + (rowHeight - styles.fontSizes.tableCell);
-//                         for (const line of lines) {
-//                             page.drawText(line, {
-//                                 x: styles.margins.left + (i * columnWidth) + 5, y: cellY,
-//                                 font: fonts.regular, size: styles.fontSizes.tableCell, color: styles.colors.text
-//                             });
-//                             cellY -= styles.fontSizes.tableCell * styles.lineHeight;
-//                         }
-//                     });
-
-//                     page.drawLine({
-//                         start: { x: styles.margins.left, y: y - 2 }, end: { x: width - styles.margins.right, y: y - 2 },
-//                         thickness: 0.5, color: styles.colors.border,
-//                     });
-//                     y-= 2;
-//                 }
-//                 break;
-//         }
-//     }
-
-//     const pages = pdfDoc.getPages();
-//     for (let i = 0; i < pages.length; i++) {
-//         await drawFooter(pages[i], i + 1, pages.length, resources);
-//     }
-    
-//     const pdfBytes = await pdfDoc.save();
-//     log.info('✅ PDF generated successfully with pdf-lib and custom fonts', {
-//         pdfSize: `${(pdfBytes.length / 1024).toFixed(2)} KB`,
-//     });
-//     return Buffer.from(pdfBytes);
-// }
-
-// // PDF GENERATION ROUTE
-// router.post('/generate', async (req, res) => {
-//     const startTime = Date.now();
-//     const requestId = Math.random().toString(36).substring(7);
-
-//     log.info(`🚀 New PDF generation request [${requestId}]`);
-
-//     try {
-//         const { encryptedContent, clientId, emailAddress, filename } = req.body;
-//         if (!encryptedContent || !clientId || !emailAddress) {
-//             return res.status(400).json({ error: 'Missing required fields' });
-//         }
-//         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-//         if (!emailRegex.test(emailAddress)) {
-//             return res.status(400).json({ error: 'Invalid email format' });
-//         }
-
-//         log.info(`🔓 Step 1: Decrypting content [${requestId}]`);
-//         const aiInterpretation = decrypt(encryptedContent, clientId);
-//         const testInfo = extractTestInfo(aiInterpretation);
-
-//         log.info(`📄 Step 2: Generating PDF from AI interpretation [${requestId}]`);
-//         const pdfBuffer = await markdownToPDF(aiInterpretation, filename);
-        
-//         log.info(`📧 Step 3: Sending email [${requestId}]`);
-//         const transporter = nodemailer.createTransport(emailConfig);
-//         const mailOptions = {
-//             from: emailConfig.auth.user,
-//             to: emailAddress,
-//             subject: `Your ${testInfo.testType} Report: ${filename || 'medical-report.pdf'}`,
-//             html: `
-// <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f4f7f6;">
-//   <div style="text-align: center; padding: 20px; background-color: #ffffff;">
-//     <img src="https://labmate.docspace.co.ke/labmatelogo.png" alt="LabMate Logo" style="max-width: 200px; height: auto;">
-//   </div>
-//   <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center;">
-//     <h2 style="margin: 0; font-size: 24px;">📄 Your Medical Report is Ready!</h2>
-//   </div>
-//   <div style="background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px;">
-//     <p>Your <strong>${testInfo.testType}</strong> has been successfully interpreted and is attached to this email.</p>
-//     <div style="background: white; padding: 20px; border-radius: 8px; border-left: 4px solid #3498db; margin: 20px 0;">
-//       <table style="width: 100%; border-collapse: collapse;">
-//         <tr><td style="padding: 8px 0; border-bottom: 1px solid #ecf0f1;"><strong>📁 Filename:</strong></td><td style="padding: 8px 0; border-bottom: 1px solid #ecf0f1;">${filename || 'medical-report.pdf'}</td></tr>
-//         <tr><td style="padding: 8px 0; border-bottom: 1px solid #ecf0f1;"><strong>🧪 Test Type:</strong></td><td style="padding: 8px 0; border-bottom: 1px solid #ecf0f1;">${testInfo.testType}</td></tr>
-//         <tr><td style="padding: 8px 0; border-bottom: 1px solid #ecf0f1;"><strong>📅 Generated:</strong></td><td style="padding: 8px 0; border-bottom: 1px solid #ecf0f1;">${new Date().toLocaleString()}</td></tr>
-//         <tr><td style="padding: 8px 0; border-bottom: 1px solid #ecf0f1;"><strong>📦 Size:</strong></td><td style="padding: 8px 0; border-bottom: 1px solid #ecf0f1;">${(pdfBuffer.length / 1024).toFixed(2)} KB</td></tr>
-//         <tr><td style="padding: 8px 0;"><strong>🆔 Request ID:</strong></td><td style="padding: 8px 0;">${requestId}</td></tr>
-//       </table>
-//     </div>
-//     <div style="background: #fff3cd; border: 1px solid #ffeaa7; color: #856404; padding: 15px; border-radius: 5px; margin: 20px 0;">
-//       <p style="margin: 0;"><strong>⚠️ Important Disclaimer:</strong> This AI-generated interpretation is for informational purposes only and should not replace professional medical advice.</p>
-//     </div>
-//   </div>
-// </div>`,
-//             attachments: [{
-//                 filename: filename || 'medical-report.pdf',
-//                 content: pdfBuffer,
-//                 contentType: 'application/pdf'
-//             }]
-//         };
-//         await transporter.sendMail(mailOptions);
-        
-//         const duration = Date.now() - startTime;
-//         log.info(`🎉 Request completed successfully [${requestId}]`, { duration: `${duration}ms` });
-//         res.json({
-//             success: true, message: 'Medical report PDF generated and sent successfully!', requestId,
-//         });
-
-//     } catch (error) {
-//         const duration = Date.now() - startTime;
-//         log.error(`💥 Request failed [${requestId}]`, { error: error.message, duration: `${duration}ms`, stack: error.stack });
-//         let statusCode = 500; let errorType = 'INTERNAL_ERROR';
-//         if (error.message.includes('Decryption failed')) { statusCode = 400; errorType = 'DECRYPTION_ERROR'; }
-//         else if (error.message.includes('Email sending failed')) { statusCode = 503; errorType = 'EMAIL_ERROR'; }
-//         else if (error.message.includes('PDF generation failed')) { statusCode = 500; errorType = 'PDF_ERROR'; }
-//         res.status(statusCode).json({ error: error.message, errorType, requestId });
-//     }
-// });
-
-// // HEALTH CHECK ROUTE
-// router.get('/health', (req, res) => {
-//     log.info('🏥 PDF service health check requested');
-//     res.json({
-//         status: 'OK',
-//         service: 'PDF Generation Service (pdf-lib)',
-//         timestamp: new Date().toISOString(),
-//         uptime: process.uptime(),
-//         memory: process.memoryUsage(),
-//         supportedFormats: ['structured', 'narrative']
-//     });
-// });
-
-// module.exports = router;
-
 const express = require('express');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 const { PDFDocument, rgb } = require('pdf-lib');
 const fetch = require('node-fetch');
-const fontkit = require('fontkit');
+const fontkit = require('fontkit'); // For custom font support
 const fs = require('fs');
 const path = require('path');
 const { marked } = require('marked');
 
 const router = express.Router();
 
-// ENHANCED LOGGING SETUP
+// LOGGING SETUP
 const log = {
     info: (message, data = null) => {
         const timestamp = new Date().toISOString();
@@ -4115,84 +3649,48 @@ function extractTestInfo(markdownText) {
 }
 
 // ==========================================================================================
-// ENHANCED PDF-LIB IMPLEMENTATION WITH PREMIUM VISUAL DESIGN
+// PDF-LIB IMPLEMENTATION WITH CUSTOM FONTS
 // ==========================================================================================
 
-// ENHANCED PDF STYLING CONSTANTS
+// PDF STYLING CONSTANTS
 const styles = {
     colors: {
-        // Primary brand colors
-        primary: rgb(0.067, 0.333, 0.529),      // Deep medical blue #1155AB
-        secondary: rgb(0.118, 0.565, 0.792),    // Lighter blue #1E90CB
-        accent: rgb(0.204, 0.596, 0.859),       // Accent blue #3498DB
-        
-        // Status colors
-        success: rgb(0.155, 0.678, 0.376),      // Green #27AE60
-        warning: rgb(0.953, 0.612, 0.071),      // Orange #F39C12
-        danger: rgb(0.906, 0.298, 0.235),       // Red #E74C3C
-        
-        // Text colors
-        textPrimary: rgb(0.133, 0.133, 0.133),  // Dark gray #222
-        textSecondary: rgb(0.4, 0.4, 0.4),      // Medium gray #666
-        textLight: rgb(0.6, 0.6, 0.6),          // Light gray #999
-        textMuted: rgb(0.8, 0.8, 0.8),          // Very light gray #CCC
-        
-        // Background colors
-        white: rgb(1, 1, 1),
-        lightBackground: rgb(0.98, 0.98, 0.98), // Off-white #FAFAFA
-        cardBackground: rgb(0.96, 0.97, 0.98),  // Light card background
-        
-        // Border colors
-        borderLight: rgb(0.9, 0.9, 0.9),        // Light border
-        borderMedium: rgb(0.8, 0.8, 0.8),       // Medium border
-        
-        // Table colors
-        tableHeader: rgb(0.067, 0.333, 0.529),  // Same as primary
-        tableAlternate: rgb(0.976, 0.976, 0.976), // Very light gray for alternating rows
+        primary: rgb(0.17, 0.24, 0.31), text: rgb(0.2, 0.2, 0.2),
+        lightText: rgb(0.5, 0.55, 0.55), border: rgb(0.93, 0.94, 0.95),
+        tableHeader: rgb(0.2, 0.28, 0.36), white: rgb(1, 1, 1),
     },
-    
-    fontSizes: {
-        h1: 26,
-        h2: 20,
-        h3: 16,
-        h4: 14,
-        body: 11,
-        bodySmall: 10,
-        caption: 9,
-        tableHeader: 12,
-        tableCell: 10,
-        footer: 8,
-    },
-    
-    spacing: {
-        xxs: 4,
-        xs: 8,
-        sm: 12,
-        md: 16,
-        lg: 24,
-        xl: 32,
-        xxl: 48,
-    },
-    
-    lineHeight: 1.6,
-    
-    margins: {
-        top: 80,
-        bottom: 80,
-        left: 60,
-        right: 60,
-    },
-    
-    borderRadius: 4,
-    shadowOffset: 2,
+    fontSizes: { h1: 24, h2: 18, p: 10, tableHeader: 11, tableCell: 10, footer: 8 },
+    lineHeight: 1.5,
+    margins: { top: 72, bottom: 72, left: 57, right: 57 },
 };
 
-// ENHANCED TEXT WRAPPING WITH BETTER TYPOGRAPHY
-function wrapText(text, maxWidth, font, fontSize, lineHeight = 1.6) {
+// PREPROCESS MARKDOWN TO REPLACE EMOJIS
+function preprocessMarkdown(markdownText) {
+    let processedText = markdownText;
+    const replacements = {
+        '🧪': '**Test:**', '🔍': '**Findings:**', '🧑‍⚕️': '**Doctor\'s Note:**',
+        '📝': '**Note:**', '❌': '**Result (Abnormal):**', '✅': '**Result (Normal):**',
+        '⚠️': '**Warning:**', '📊': '**Data:**', '🩺': '**Medical:**',
+        '📄': '**Report:**', '📌': '**Key Point:**'
+    };
+    for (const [emoji, text] of Object.entries(replacements)) {
+        processedText = processedText.replace(new RegExp(emoji, 'g'), text);
+    }
+    return processedText;
+}
+
+// LOAD FONT FILES FROM DISK
+const fontBytes = {
+    regular: fs.readFileSync(path.join(__dirname, '../fonts/NotoSans-Regular.ttf')),
+    bold: fs.readFileSync(path.join(__dirname, '../fonts/NotoSans-Bold.ttf')),
+    italic: fs.readFileSync(path.join(__dirname, '../fonts/NotoSans-Italic.ttf')),
+};
+
+// TEXT WRAPPING HELPER
+function wrapText(text, maxWidth, font, fontSize) {
     const words = text.split(' ');
     let lines = [];
     if (!words.length) return lines;
-    
     let currentLine = words.shift();
     for (const word of words) {
         const lineWithWord = `${currentLine} ${word}`;
@@ -4207,346 +3705,53 @@ function wrapText(text, maxWidth, font, fontSize, lineHeight = 1.6) {
     return lines;
 }
 
-// PREPROCESS MARKDOWN WITH BETTER EMOJI REPLACEMENT
-function preprocessMarkdown(markdownText) {
-    let processedText = markdownText;
-    const replacements = {
-        '🧪': '**Test Results:**',
-        '🔍': '**Clinical Findings:**',
-        '🧑‍⚕️': '**Medical Assessment:**',
-        '📝': '**Clinical Note:**',
-        '❌': '**Abnormal Result:**',
-        '✅': '**Normal Result:**',
-        '⚠️': '**Important:**',
-        '📊': '**Laboratory Data:**',
-        '🩺': '**Clinical Evaluation:**',
-        '📄': '**Medical Report:**',
-        '📌': '**Key Finding:**',
-        '💊': '**Medication:**',
-        '🩸': '**Blood Work:**',
-        '🫀': '**Cardiac:**',
-        '🧬': '**Genetic:**',
-        '🦠': '**Microbiology:**',
-        '🔬': '**Laboratory:**',
-    };
-    
-    for (const [emoji, text] of Object.entries(replacements)) {
-        processedText = processedText.replace(new RegExp(emoji, 'g'), text);
-    }
-    return processedText;
-}
-
-// LOAD FONT FILES FROM DISK
-const fontBytes = {
-    regular: fs.readFileSync(path.join(__dirname, '../fonts/NotoSans-Regular.ttf')),
-    bold: fs.readFileSync(path.join(__dirname, '../fonts/NotoSans-Bold.ttf')),
-    italic: fs.readFileSync(path.join(__dirname, '../fonts/NotoSans-Italic.ttf')),
-};
-
-// ENHANCED HEADER WITH GRADIENT EFFECT SIMULATION
+// PDF HEADER AND FOOTER DRAWING HELPERS
+// ## FIX 1: Add 'height' as a parameter to the function signature.
 async function drawHeader(page, resources, testInfo, height) {
     const { width } = page.getSize();
     const { fonts, logoImage } = resources;
-    const currentDate = new Date().toLocaleDateString('en-US', { 
-        year: 'numeric', 
-        month: 'long', 
-        day: 'numeric',
-        weekday: 'long'
-    });
+    const currentDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
     
-    // Create gradient-like effect with multiple rectangles
-    const headerHeight = 120;
-    const gradientSteps = 20;
-    for (let i = 0; i < gradientSteps; i++) {
-        const alpha = 0.1 + (i / gradientSteps) * 0.1;
-        const yPos = height - styles.margins.top + 60 - (i * 2);
-        page.drawRectangle({
-            x: 0,
-            y: yPos,
-            width: width,
-            height: 2,
-            color: rgb(0.067 + alpha, 0.333 + alpha * 0.5, 0.529 + alpha * 0.3),
-            opacity: 0.3
-        });
-    }
-    
-    // Main header background
-    page.drawRectangle({
-        x: 0,
-        y: height - styles.margins.top + 20,
-        width: width,
-        height: headerHeight,
-        color: styles.colors.primary,
-        opacity: 0.03
-    });
-    
-    // Logo with drop shadow effect
-    const logoDims = logoImage.scale(0.28);
-    // Shadow
+    const logoDims = logoImage.scale(0.25);
     page.drawImage(logoImage, {
-        x: (width - logoDims.width) / 2 + 2,
-        y: height - styles.margins.top + 75 - 2,
-        width: logoDims.width,
-        height: logoDims.height,
-        opacity: 0.3
-    });
-    // Main logo
-    page.drawImage(logoImage, {
-        x: (width - logoDims.width) / 2,
-        y: height - styles.margins.top + 75,
-        width: logoDims.width,
-        height: logoDims.height,
+        x: (width - logoDims.width) / 2, y: height - styles.margins.top + 70,
+        width: logoDims.width, height: logoDims.height,
     });
     
-    // Enhanced title with better typography
-    const titleY = height - styles.margins.top + 35;
     page.drawText(testInfo.testType, {
-        x: 0,
-        y: titleY,
-        font: fonts.bold,
-        size: styles.fontSizes.h1,
-        color: styles.colors.primary,
-        width: width,
-        align: 'center',
+        x: 0, y: height - styles.margins.top + 30,
+        font: fonts.bold, size: styles.fontSizes.h1, color: styles.colors.primary,
+        width: width, align: 'center',
     });
-    
-    // Subtitle with better spacing
+
     page.drawText(`Generated on ${currentDate}`, {
-        x: 0,
-        y: titleY - 25,
-        font: fonts.regular,
-        size: styles.fontSizes.body,
-        color: styles.colors.textSecondary,
-        width: width,
-        align: 'center',
+        x: 0, y: height - styles.margins.top + 15,
+        font: fonts.regular, size: styles.fontSizes.p, color: styles.colors.lightText,
+        width: width, align: 'center',
     });
-    
-    // Enhanced decorative line with rounded ends
-    const lineY = height - styles.margins.top - 5;
-    page.drawRectangle({
-        x: styles.margins.left,
-        y: lineY - 1,
-        width: width - styles.margins.left - styles.margins.right,
-        height: 3,
-        color: styles.colors.primary,
-    });
-    
-    // Add subtle accent line
-    page.drawRectangle({
-        x: styles.margins.left + 20,
-        y: lineY - 8,
-        width: width - styles.margins.left - styles.margins.right - 40,
-        height: 1,
-        color: styles.colors.secondary,
-        opacity: 0.6
+
+    page.drawLine({
+        start: { x: styles.margins.left, y: height - styles.margins.top },
+        end: { x: width - styles.margins.right, y: height - styles.margins.top },
+        thickness: 2, color: styles.colors.primary,
     });
 }
 
-// ENHANCED FOOTER WITH BETTER DESIGN
-async function drawFooter(page, pageNumber, totalPages, resources, testInfo) {
+async function drawFooter(page, pageNumber, totalPages, resources) {
     const { width } = page.getSize();
     const { fonts } = resources;
+    const footerText = `Page ${pageNumber} of ${totalPages} - Generated by DocSpace PDF Service`;
     
-    // Footer background
-    page.drawRectangle({
-        x: 0,
-        y: 0,
-        width: width,
-        height: styles.margins.bottom - 20,
-        color: styles.colors.lightBackground,
-        opacity: 0.5
-    });
-    
-    // Footer line
-    page.drawRectangle({
-        x: styles.margins.left,
-        y: styles.margins.bottom - 25,
-        width: width - styles.margins.left - styles.margins.right,
-        height: 1,
-        color: styles.colors.borderMedium,
-    });
-    
-    // Left side - service info
-    page.drawText('DocSpace Medical Reports', {
-        x: styles.margins.left,
-        y: styles.margins.bottom - 40,
-        font: fonts.regular,
-        size: styles.fontSizes.caption,
-        color: styles.colors.textLight,
-    });
-    
-    // Center - page number with enhanced styling
-    const pageText = `Page ${pageNumber} of ${totalPages}`;
-    const pageTextWidth = fonts.bold.widthOfTextAtSize(pageText, styles.fontSizes.footer);
-    page.drawText(pageText, {
-        x: (width - pageTextWidth) / 2,
-        y: styles.margins.bottom - 40,
-        font: fonts.bold,
-        size: styles.fontSizes.footer,
-        color: styles.colors.primary,
-    });
-    
-    // Right side - generation timestamp
-    const timestamp = new Date().toLocaleString('en-US', { 
-        month: 'short', 
-        day: 'numeric', 
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-    });
-    const timestampWidth = fonts.regular.widthOfTextAtSize(timestamp, styles.fontSizes.caption);
-    page.drawText(timestamp, {
-        x: width - styles.margins.right - timestampWidth,
-        y: styles.margins.bottom - 40,
-        font: fonts.regular,
-        size: styles.fontSizes.caption,
-        color: styles.colors.textLight,
+    page.drawText(footerText, {
+        x: 0, y: styles.margins.bottom - 20,
+        font: fonts.regular, size: styles.fontSizes.footer, color: styles.colors.lightText,
+        width: width, align: 'center',
     });
 }
 
-// ENHANCED CARD-LIKE CONTENT SECTIONS
-function drawContentCard(page, x, y, width, height, color = styles.colors.cardBackground, borderColor = styles.colors.borderLight) {
-    // Card background
-    page.drawRectangle({
-        x: x,
-        y: y - height,
-        width: width,
-        height: height,
-        color: color,
-    });
-    
-    // Card border
-    page.drawRectangle({
-        x: x,
-        y: y - height,
-        width: width,
-        height: height,
-        borderColor: borderColor,
-        borderWidth: 1,
-    });
-    
-    // Subtle shadow effect
-    page.drawRectangle({
-        x: x + 2,
-        y: y - height - 2,
-        width: width,
-        height: height,
-        color: rgb(0, 0, 0),
-        opacity: 0.05
-    });
-}
-
-// ENHANCED TABLE DRAWING WITH BETTER STYLING
-function drawEnhancedTable(page, fonts, header, rows, x, y, contentWidth) {
-    const numColumns = header.length;
-    if (numColumns === 0) return y;
-    
-    const columnWidth = contentWidth / numColumns;
-    const headerHeight = 35;
-    const rowHeight = 25;
-    
-    // Table container with shadow
-    const tableHeight = headerHeight + (rows.length * rowHeight);
-    page.drawRectangle({
-        x: x + 2,
-        y: y - tableHeight - 2,
-        width: contentWidth,
-        height: tableHeight,
-        color: rgb(0, 0, 0),
-        opacity: 0.05
-    });
-    
-    // Table background
-    page.drawRectangle({
-        x: x,
-        y: y - tableHeight,
-        width: contentWidth,
-        height: tableHeight,
-        color: styles.colors.white,
-        borderColor: styles.colors.borderLight,
-        borderWidth: 1,
-    });
-    
-    // Enhanced header
-    page.drawRectangle({
-        x: x,
-        y: y - headerHeight,
-        width: contentWidth,
-        height: headerHeight,
-        color: styles.colors.tableHeader,
-    });
-    
-    // Header text with better spacing
-    header.forEach((text, i) => {
-        const headerText = text.toUpperCase();
-        page.drawText(headerText, {
-            x: x + (i * columnWidth) + styles.spacing.sm,
-            y: y - headerHeight + styles.spacing.sm,
-            font: fonts.bold,
-            size: styles.fontSizes.tableHeader,
-            color: styles.colors.white,
-        });
-    });
-    
-    // Enhanced rows with alternating colors
-    rows.forEach((row, rowIndex) => {
-        const rowY = y - headerHeight - ((rowIndex + 1) * rowHeight);
-        const isAlternate = rowIndex % 2 === 1;
-        
-        // Row background
-        if (isAlternate) {
-            page.drawRectangle({
-                x: x,
-                y: rowY,
-                width: contentWidth,
-                height: rowHeight,
-                color: styles.colors.tableAlternate,
-            });
-        }
-        
-        // Row data
-        row.forEach((cellText, colIndex) => {
-            const wrappedText = wrapText(cellText, columnWidth - styles.spacing.md, fonts.regular, styles.fontSizes.tableCell);
-            let cellY = rowY + rowHeight - styles.spacing.sm;
-            
-            // Detect if cell contains numerical values for right alignment
-            const isNumeric = /^\d+\.?\d*\s*(mg\/dL|g\/dL|mmol\/L|IU\/L|ng\/mL|%)?$/i.test(cellText.trim());
-            
-            wrappedText.forEach((line, lineIndex) => {
-                const textY = cellY - (lineIndex * styles.fontSizes.tableCell * styles.lineHeight);
-                let textX = x + (colIndex * columnWidth) + styles.spacing.sm;
-                
-                // Right align numeric values
-                if (isNumeric && colIndex > 0) {
-                    const textWidth = fonts.regular.widthOfTextAtSize(line, styles.fontSizes.tableCell);
-                    textX = x + ((colIndex + 1) * columnWidth) - styles.spacing.sm - textWidth;
-                }
-                
-                page.drawText(line, {
-                    x: textX,
-                    y: textY,
-                    font: fonts.regular,
-                    size: styles.fontSizes.tableCell,
-                    color: styles.colors.textPrimary,
-                });
-            });
-        });
-        
-        // Row separator
-        page.drawLine({
-            start: { x: x, y: rowY },
-            end: { x: x + contentWidth, y: rowY },
-            thickness: 0.5,
-            color: styles.colors.borderLight,
-        });
-    });
-    
-    return y - tableHeight;
-}
-
-// MAIN ENHANCED PDF GENERATION FUNCTION
+// MAIN PDF GENERATION FUNCTION
 async function markdownToPDF(markdownText, filename = 'document.pdf') {
-    log.debug('📝 Starting enhanced markdown to PDF conversion');
+    log.debug('📝 Starting markdown to PDF conversion with pdf-lib and custom fonts');
     const processedMarkdown = preprocessMarkdown(markdownText);
 
     const pdfDoc = await PDFDocument.create();
@@ -4558,7 +3763,14 @@ async function markdownToPDF(markdownText, filename = 'document.pdf') {
         italic: await pdfDoc.embedFont(fontBytes.italic),
     };
 
+    // const testInfo = extractTestInfo(markdownText);
+    // const logoUrl = 'https://labmate.docspace.co.ke/labmatelogo.png';
+    // const logoBytes = await fetch(logoUrl).then(res => res.arrayBuffer());
+    // const logoImage = await pdfDoc.embedPng(logoBytes);
+    // const resources = { pdfDoc, fonts, logoImage };
+
     const testInfo = extractTestInfo(markdownText);
+    // ⬇️ Load the logo from a local file instead of a URL
     const logoPath = path.join(__dirname, '../assets/labmatelogo.png');
     const logoBytes = fs.readFileSync(logoPath);
     const logoImage = await pdfDoc.embedPng(logoBytes);
@@ -4567,578 +3779,227 @@ async function markdownToPDF(markdownText, filename = 'document.pdf') {
     let page = pdfDoc.addPage();
     const { width, height } = page.getSize();
     const contentWidth = width - styles.margins.left - styles.margins.right;
-    let y = height - styles.margins.top - 80; 
+    let y = height - styles.margins.top - 50; 
     
     const checkAndAddNewPage = async (requiredHeight) => {
-        if (y - requiredHeight < styles.margins.bottom + 60) {
+        if (y - requiredHeight < styles.margins.bottom) {
             page = pdfDoc.addPage();
-            y = height - styles.margins.top - 40;
+            y = height - styles.margins.top - 20;
+            // ## FIX 2: Pass 'height' when calling drawHeader for a new page.
             await drawHeader(page, resources, testInfo, height);
         }
     };
 
+    // ## FIX 3: Pass 'height' when calling drawHeader for the first page.
     await drawHeader(page, resources, testInfo, height);
     
     const tokens = marked.lexer(processedMarkdown);
 
     for (const token of tokens) {
         let text = 'text' in token ? token.text.replace(/&quot;/g, '"').replace(/&#39;/g, "'") : '';
-        
         switch (token.type) {
             case 'heading':
-                await checkAndAddNewPage(60);
-                y -= styles.spacing.lg;
-                
-                const headingSize = token.depth === 1 ? styles.fontSizes.h1 : 
-                                 token.depth === 2 ? styles.fontSizes.h2 : 
-                                 styles.fontSizes.h3;
-                
-                // Heading background for h2 and h3
-                if (token.depth > 1) {
-                    page.drawRectangle({
-                        x: styles.margins.left - styles.spacing.sm,
-                        y: y - headingSize - styles.spacing.xs,
-                        width: contentWidth + (styles.spacing.sm * 2),
-                        height: headingSize + (styles.spacing.xs * 2),
-                        color: styles.colors.lightBackground,
-                    });
-                }
-                
+                await checkAndAddNewPage(50);
+                y -= 20;
                 page.drawText(text, {
-                    x: styles.margins.left,
-                    y: y,
-                    font: fonts.bold,
-                    size: headingSize,
-                    color: token.depth === 1 ? styles.colors.primary : styles.colors.secondary,
+                    x: styles.margins.left, y, font: fonts.bold,
+                    size: token.depth === 1 ? styles.fontSizes.h1 : styles.fontSizes.h2,
+                    color: styles.colors.primary,
                 });
-                
-                y -= headingSize + styles.spacing.md;
-                
-                // Add decorative line under main headings
-                if (token.depth <= 2) {
-                    page.drawRectangle({
-                        x: styles.margins.left,
-                        y: y,
-                        width: contentWidth * 0.3,
-                        height: 2,
-                        color: token.depth === 1 ? styles.colors.primary : styles.colors.secondary,
-                        opacity: 0.6
-                    });
-                    y -= styles.spacing.md;
-                }
+                y -= (token.depth === 1 ? styles.fontSizes.h1 : styles.fontSizes.h2) * styles.lineHeight;
                 break;
 
             case 'paragraph':
-                const lines = wrapText(text, contentWidth, fonts.regular, styles.fontSizes.body);
-                await checkAndAddNewPage(lines.length * styles.fontSizes.body * styles.lineHeight + styles.spacing.md);
-                
-                y -= styles.spacing.sm;
-                
+                const lines = wrapText(text, contentWidth, fonts.regular, styles.fontSizes.p);
+                await checkAndAddNewPage(lines.length * styles.fontSizes.p * styles.lineHeight + 10);
+                y -= 10;
                 for (const line of lines) {
                     page.drawText(line, {
-                        x: styles.margins.left,
-                        y: y,
-                        font: fonts.regular,
-                        size: styles.fontSizes.body,
-                        color: styles.colors.textPrimary,
+                        x: styles.margins.left, y, font: fonts.regular, size: styles.fontSizes.p,
+                        color: styles.colors.text, lineHeight: styles.fontSizes.p * styles.lineHeight,
                     });
-                    y -= styles.fontSizes.body * styles.lineHeight;
+                    y -= styles.fontSizes.p * styles.lineHeight;
                 }
-                y -= styles.spacing.sm;
                 break;
             
             case 'list':
-                await checkAndAddNewPage(token.items.length * 30);
-                y -= styles.spacing.sm;
-                
-                for (const item of token.items) {
-                    const itemLines = wrapText(item.text, contentWidth - styles.spacing.xl, fonts.regular, styles.fontSizes.body);
-                    await checkAndAddNewPage(itemLines.length * styles.fontSizes.body * styles.lineHeight + styles.spacing.sm);
-                    
-                    // Enhanced bullet point
-                    page.drawCircle({
-                        x: styles.margins.left + styles.spacing.xs,
-                        y: y - styles.spacing.xs,
-                        size: 2,
-                        color: styles.colors.primary,
-                    });
-                    
+                await checkAndAddNewPage(token.items.length * 20);
+                y -= 10;
+                for(const item of token.items) {
+                    const itemLines = wrapText(item.text, contentWidth - 20, fonts.regular, styles.fontSizes.p);
+                    await checkAndAddNewPage(itemLines.length * styles.fontSizes.p * styles.lineHeight + 5);
+                    y -= 5;
                     let lineY = y;
-                    for (const line of itemLines) {
+                    page.drawText('•', { x: styles.margins.left, y: lineY, font: fonts.regular, size: styles.fontSizes.p });
+                    for(const line of itemLines) {
                         page.drawText(line, {
-                            x: styles.margins.left + styles.spacing.lg,
-                            y: lineY,
-                            font: fonts.regular,
-                            size: styles.fontSizes.body,
-                            color: styles.colors.textPrimary,
+                            x: styles.margins.left + 20, y: lineY, font: fonts.regular,
+                            size: styles.fontSizes.p, lineHeight: styles.fontSizes.p * styles.lineHeight,
                         });
-                        lineY -= styles.fontSizes.body * styles.lineHeight;
+                        lineY -= styles.fontSizes.p * styles.lineHeight;
                     }
-                    y = lineY - styles.spacing.xs;
+                    y = lineY;
                 }
                 break;
 
             case 'table':
                 const header = token.header.map(h => h.text);
                 const rows = token.rows.map(row => row.map(cell => cell.text));
+                const numColumns = header.length;
+                if (numColumns === 0) continue;
+                const columnWidth = contentWidth / numColumns;
                 
-                if (header.length === 0) continue;
-                
-                const tableHeight = 35 + (rows.length * 25) + styles.spacing.lg;
-                await checkAndAddNewPage(tableHeight);
-                
-                y -= styles.spacing.md;
-                y = drawEnhancedTable(page, fonts, header, rows, styles.margins.left, y, contentWidth);
-                y -= styles.spacing.md;
+                await checkAndAddNewPage(40);
+                y -= 20;
+
+                const headerY = y;
+                page.drawRectangle({
+                    x: styles.margins.left, y: headerY - styles.fontSizes.tableHeader * styles.lineHeight * 0.7,
+                    width: contentWidth, height: styles.fontSizes.tableHeader * styles.lineHeight,
+                    color: styles.colors.tableHeader,
+                });
+                header.forEach((text, i) => {
+                    page.drawText(text, {
+                        x: styles.margins.left + (i * columnWidth) + 5, y: headerY,
+                        font: fonts.bold, size: styles.fontSizes.tableHeader, color: styles.colors.white,
+                    });
+                });
+                y -= styles.fontSizes.tableHeader * styles.lineHeight;
+
+                for (const row of rows) {
+                    let maxLines = 1;
+                    const wrappedCells = row.map(cellText => {
+                        const lines = wrapText(cellText, columnWidth - 10, fonts.regular, styles.fontSizes.tableCell);
+                        if (lines.length > maxLines) maxLines = lines.length;
+                        return lines;
+                    });
+                    
+                    const rowHeight = maxLines * styles.fontSizes.tableCell * styles.lineHeight;
+                    await checkAndAddNewPage(rowHeight + 5);
+                    y -= rowHeight;
+                    
+                    wrappedCells.forEach((lines, i) => {
+                        let cellY = y + (rowHeight - styles.fontSizes.tableCell);
+                        for (const line of lines) {
+                            page.drawText(line, {
+                                x: styles.margins.left + (i * columnWidth) + 5, y: cellY,
+                                font: fonts.regular, size: styles.fontSizes.tableCell, color: styles.colors.text
+                            });
+                            cellY -= styles.fontSizes.tableCell * styles.lineHeight;
+                        }
+                    });
+
+                    page.drawLine({
+                        start: { x: styles.margins.left, y: y - 2 }, end: { x: width - styles.margins.right, y: y - 2 },
+                        thickness: 0.5, color: styles.colors.border,
+                    });
+                    y-= 2;
+                }
                 break;
         }
     }
 
-    // Add enhanced footers to all pages
     const pages = pdfDoc.getPages();
     for (let i = 0; i < pages.length; i++) {
-        await drawFooter(pages[i], i + 1, pages.length, resources, testInfo);
+        await drawFooter(pages[i], i + 1, pages.length, resources);
     }
     
     const pdfBytes = await pdfDoc.save();
-    log.info('✅ Enhanced PDF generated successfully', {
+    log.info('✅ PDF generated successfully with pdf-lib and custom fonts', {
         pdfSize: `${(pdfBytes.length / 1024).toFixed(2)} KB`,
-        pages: pages.length,
-        testType: testInfo.testType
     });
-    
     return Buffer.from(pdfBytes);
 }
 
 // PDF GENERATION ROUTE
-// router.post('/generate', async (req, res) => {
-//     const startTime = Date.now();
-//     const requestId = Math.random().toString(36).substring(7);
-
-//     log.info(`🚀 New enhanced PDF generation request [${requestId}]`);
-
-//     try {
-//         const { encryptedContent, clientId, emailAddress, filename } = req.body;
-//         if (!encryptedContent || !clientId || !emailAddress) {
-//             return res.status(400).json({ error: 'Missing required fields' });
-//         }
-//         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-//         if (!emailRegex.test(emailAddress)) {
-//             return res.status(400).json({ error: 'Invalid email format' });
-//         }
-
-//         log.info(`🔓 Step 1: Decrypting content [${requestId}]`);
-//         const aiInterpretation = decrypt(encryptedContent, clientId);
-//         const testInfo = extractTestInfo(aiInterpretation);
-
-//         log.info(`📄 Step 2: Generating enhanced PDF [${requestId}]`);
-//         const pdfBuffer = await markdownToPDF(aiInterpretation, filename);
-        
-//         log.info(`📧 Step 3: Sending email [${requestId}]`);
-//         const transporter = nodemailer.createTransporter(emailConfig);
-//         const mailOptions = {
-//             from: emailConfig.auth.user,
-//             to: emailAddress,
-//             subject: `Your ${testInfo.testType} Report: ${filename || 'medical-report.pdf'}`,
-//             html: `
-// <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; background: #f8f9fa;">
-//   <div style="text-align: center; padding: 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
-//     <img src="https://labmate.docspace.co.ke/labmatelogo.png" alt="LabMate Logo" style="max-width: 180px; height: auto; margin-bottom: 20px;">
-//     <h1 style="color: white; margin: 0; font-size: 24px; font-weight: 600;">📋 Medical Report Ready</h1>
-//     <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0 0; font-size: 16px;">Your report has been generated successfully</p>
-//   </div>
-  
-//   <div style="background: white; padding: 40px; border-radius: 0 0 12px 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-//     <div style="background: #f8f9fa; padding: 24px; border-radius: 8px; border-left: 4px solid #1155AB; margin-bottom: 24px;">
-//       <h3 style="margin: 0 0 16px 0; color: #1155AB; font-size: 18px;">📄 Report Details</h3>
-//       <div style="display: grid; gap: 12px;">
-//         <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e9ecef;">
-//           <span style="font-weight: 600; color: #495057;">📁 Filename:</span>
-//           <span style="color: #6c757d;">${filename || 'medical-report.pdf'}</span>
-//         </div>
-//         <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e9ecef;">
-//           <span style="font-weight: 600; color: #495057;">🧪 Test Type:</span>
-//           <span style="color: #6c757d;">${testInfo.testType}</span>
-//         </div>
-//         <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e9ecef;">
-//           <span style="font-weight: 600; color: #495057;">📅 Generated:</span>
-//           <span style="color: #6c757d;">${new Date().toLocaleString()}</span>
-//         </div>
-//         <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e9ecef;">
-//           <span style="font-weight: 600; color: #495057;">📦 Size:</span>
-//           <span style="color: #6c757d;">${(pdfBuffer.length / 1024).toFixed(2)} KB</span>
-//         </div>
-//         <div style="display: flex; justify-content: space-between; padding: 8px 0;">
-//           <span style="font-weight: 600; color: #495057;">🆔 Request ID:</span>
-//           <span style="color: #6c757d; font-family: monospace;">${requestId}</span>
-//         </div>
-//       </div>
-//     </div>
-    
-//     <div style="background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); border: 1px solid #ffeaa7; color: #856404; padding: 20px; border-radius: 8px; margin-bottom: 24px;">
-//       <h4 style="margin: 0 0 8px 0; font-size: 16px; display: flex; align-items: center;">
-//         <span style="margin-right: 8px;">⚠️</span>
-//         Important Medical Disclaimer
-//       </h4>
-//       <p style="margin: 0; line-height: 1.5; font-size: 14px;">
-//         This AI-generated interpretation is for informational purposes only and should not replace professional medical advice. 
-//         Always consult with your healthcare provider for proper medical guidance.
-//       </p>
-//     </div>
-    
-//     <div style="text-align: center; padding: 20px 0; border-top: 1px solid #e9ecef;">
-//       <p style="margin: 0; color: #6c757d; font-size: 14px;">
-//         <strong>DocSpace Medical Reports</strong> - Professional AI-powered medical document generation
-//       </p>
-//       <p style="margin: 8px 0 0 0; color: #adb5bd; font-size: 12px;">
-//         This report was generated using advanced AI technology for enhanced readability and professional presentation.
-//       </p>
-//     </div>
-//   </div>
-// </div>`,
-//             attachments: [{
-//                 filename: filename || 'medical-report.pdf',
-//                 content: pdfBuffer,
-//                 contentType: 'application/pdf'
-//             }]
-//         };
-//         await transporter.sendMail(mailOptions);
-        
-//         const duration = Date.now() - startTime;
-//         log.info(`🎉 Enhanced PDF request completed successfully [${requestId}]`, { 
-//             duration: `${duration}ms`,
-//             pdfSize: `${(pdfBuffer.length / 1024).toFixed(2)} KB`,
-//             testType: testInfo.testType
-//         });
-        
-//         res.json({
-//             success: true, 
-//             message: 'Enhanced medical report PDF generated and sent successfully!', 
-//             requestId,
-//             pdfSize: `${(pdfBuffer.length / 1024).toFixed(2)} KB`,
-//             testType: testInfo.testType,
-//             enhancedFeatures: [
-//                 'Professional gradient headers',
-//                 'Enhanced typography with better spacing',
-//                 'Card-based content sections',
-//                 'Improved table styling with alternating rows',
-//                 'Better color scheme and visual hierarchy',
-//                 'Enhanced footer with timestamp',
-//                 'Shadow effects and modern styling'
-//             ]
-//         });
-
-//     } catch (error) {
-//         const duration = Date.now() - startTime;
-//         log.error(`💥 Enhanced PDF request failed [${requestId}]`, { 
-//             error: error.message, 
-//             duration: `${duration}ms`, 
-//             stack: error.stack 
-//         });
-        
-//         let statusCode = 500; 
-//         let errorType = 'INTERNAL_ERROR';
-//         if (error.message.includes('Decryption failed')) { 
-//             statusCode = 400; 
-//             errorType = 'DECRYPTION_ERROR'; 
-//         }
-//         else if (error.message.includes('Email sending failed')) { 
-//             statusCode = 503; 
-//             errorType = 'EMAIL_ERROR'; 
-//         }
-//         else if (error.message.includes('PDF generation failed')) { 
-//             statusCode = 500; 
-//             errorType = 'PDF_ERROR'; 
-//         }
-        
-//         res.status(statusCode).json({ 
-//             error: error.message, 
-//             errorType, 
-//             requestId,
-//             service: 'Enhanced PDF Generation Service'
-//         });
-//     }
-// });
-
 router.post('/generate', async (req, res) => {
-  const startTime = Date.now();
-  const requestId = Math.random().toString(36).substring(7);
+    const startTime = Date.now();
+    const requestId = Math.random().toString(36).substring(7);
 
-  log.info(`🚀 New enhanced PDF generation request [${requestId}]`);
+    log.info(`🚀 New PDF generation request [${requestId}]`);
 
-  try {
-      const { encryptedContent, clientId, emailAddress, filename } = req.body;
-      if (!encryptedContent || !clientId || !emailAddress) {
-          return res.status(400).json({ error: 'Missing required fields' });
-      }
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(emailAddress)) {
-          return res.status(400).json({ error: 'Invalid email format' });
-      }
+    try {
+        const { encryptedContent, clientId, emailAddress, filename } = req.body;
+        if (!encryptedContent || !clientId || !emailAddress) {
+            return res.status(400).json({ error: 'Missing required fields' });
+        }
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(emailAddress)) {
+            return res.status(400).json({ error: 'Invalid email format' });
+        }
 
-      log.info(`🔓 Step 1: Decrypting content [${requestId}]`);
-      const aiInterpretation = decrypt(encryptedContent, clientId);
-      const testInfo = extractTestInfo(aiInterpretation);
+        log.info(`🔓 Step 1: Decrypting content [${requestId}]`);
+        const aiInterpretation = decrypt(encryptedContent, clientId);
+        const testInfo = extractTestInfo(aiInterpretation);
 
-      log.info(`📄 Step 2: Generating enhanced PDF [${requestId}]`);
-      const pdfBuffer = await markdownToPDF(aiInterpretation, filename);
-      
-      log.info(`📧 Step 3: Sending email [${requestId}]`);
-      
-      // CORRECTED LINE: Use createTransport instead of createTransporter
-      const transporter = nodemailer.createTransport(emailConfig);
-      
-      const mailOptions = {
-          from: emailConfig.auth.user,
-          to: emailAddress,
-          subject: `Your ${testInfo.testType} Report: ${filename || 'medical-report.pdf'}`,
-          html: `
-<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; background: #f8f9fa;">
-<div style="text-align: center; padding: 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
-  <img src="https://labmate.docspace.co.ke/labmatelogo.png" alt="LabMate Logo" style="max-width: 180px; height: auto; margin-bottom: 20px;">
-  <h1 style="color: white; margin: 0; font-size: 24px; font-weight: 600;">📋 Medical Report Ready</h1>
-  <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0 0; font-size: 16px;">Your report has been generated successfully</p>
-</div>
-
-<div style="background: white; padding: 40px; border-radius: 0 0 12px 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-  <div style="background: #f8f9fa; padding: 24px; border-radius: 8px; border-left: 4px solid #1155AB; margin-bottom: 24px;">
-    <h3 style="margin: 0 0 16px 0; color: #1155AB; font-size: 18px;">📄 Report Details</h3>
-    <div style="display: grid; gap: 12px;">
-      <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e9ecef;">
-        <span style="font-weight: 600; color: #495057;">📁 Filename:</span>
-        <span style="color: #6c757d;">${filename || 'medical-report.pdf'}</span>
-      </div>
-      <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e9ecef;">
-        <span style="font-weight: 600; color: #495057;">🧪 Test Type:</span>
-        <span style="color: #6c757d;">${testInfo.testType}</span>
-      </div>
-      <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e9ecef;">
-        <span style="font-weight: 600; color: #495057;">📅 Generated:</span>
-        <span style="color: #6c757d;">${new Date().toLocaleString()}</span>
-      </div>
-      <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e9ecef;">
-        <span style="font-weight: 600; color: #495057;">📦 Size:</span>
-        <span style="color: #6c757d;">${(pdfBuffer.length / 1024).toFixed(2)} KB</span>
-      </div>
-      <div style="display: flex; justify-content: space-between; padding: 8px 0;">
-        <span style="font-weight: 600; color: #495057;">🆔 Request ID:</span>
-        <span style="color: #6c757d; font-family: monospace;">${requestId}</span>
-      </div>
+        log.info(`📄 Step 2: Generating PDF from AI interpretation [${requestId}]`);
+        const pdfBuffer = await markdownToPDF(aiInterpretation, filename);
+        
+        log.info(`📧 Step 3: Sending email [${requestId}]`);
+        const transporter = nodemailer.createTransport(emailConfig);
+        const mailOptions = {
+            from: emailConfig.auth.user,
+            to: emailAddress,
+            subject: `Your ${testInfo.testType} Report: ${filename || 'medical-report.pdf'}`,
+            html: `
+<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f4f7f6;">
+  <div style="text-align: center; padding: 20px; background-color: #ffffff;">
+    <img src="https://labmate.docspace.co.ke/labmatelogo.png" alt="LabMate Logo" style="max-width: 200px; height: auto;">
+  </div>
+  <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center;">
+    <h2 style="margin: 0; font-size: 24px;">📄 Your Medical Report is Ready!</h2>
+  </div>
+  <div style="background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px;">
+    <p>Your <strong>${testInfo.testType}</strong> has been successfully interpreted and is attached to this email.</p>
+    <div style="background: white; padding: 20px; border-radius: 8px; border-left: 4px solid #3498db; margin: 20px 0;">
+      <table style="width: 100%; border-collapse: collapse;">
+        <tr><td style="padding: 8px 0; border-bottom: 1px solid #ecf0f1;"><strong>📁 Filename:</strong></td><td style="padding: 8px 0; border-bottom: 1px solid #ecf0f1;">${filename || 'medical-report.pdf'}</td></tr>
+        <tr><td style="padding: 8px 0; border-bottom: 1px solid #ecf0f1;"><strong>🧪 Test Type:</strong></td><td style="padding: 8px 0; border-bottom: 1px solid #ecf0f1;">${testInfo.testType}</td></tr>
+        <tr><td style="padding: 8px 0; border-bottom: 1px solid #ecf0f1;"><strong>📅 Generated:</strong></td><td style="padding: 8px 0; border-bottom: 1px solid #ecf0f1;">${new Date().toLocaleString()}</td></tr>
+        <tr><td style="padding: 8px 0; border-bottom: 1px solid #ecf0f1;"><strong>📦 Size:</strong></td><td style="padding: 8px 0; border-bottom: 1px solid #ecf0f1;">${(pdfBuffer.length / 1024).toFixed(2)} KB</td></tr>
+        <tr><td style="padding: 8px 0;"><strong>🆔 Request ID:</strong></td><td style="padding: 8px 0;">${requestId}</td></tr>
+      </table>
+    </div>
+    <div style="background: #fff3cd; border: 1px solid #ffeaa7; color: #856404; padding: 15px; border-radius: 5px; margin: 20px 0;">
+      <p style="margin: 0;"><strong>⚠️ Important Disclaimer:</strong> This AI-generated interpretation is for informational purposes only and should not replace professional medical advice.</p>
     </div>
   </div>
-  
-  <div style="background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); border: 1px solid #ffeaa7; color: #856404; padding: 20px; border-radius: 8px; margin-bottom: 24px;">
-    <h4 style="margin: 0 0 8px 0; font-size: 16px; display: flex; align-items: center;">
-      <span style="margin-right: 8px;">⚠️</span>
-      Important Medical Disclaimer
-    </h4>
-    <p style="margin: 0; line-height: 1.5; font-size: 14px;">
-      This AI-generated interpretation is for informational purposes only and should not replace professional medical advice. 
-      Always consult with your healthcare provider for proper medical guidance.
-    </p>
-  </div>
-  
-  <div style="text-align: center; padding: 20px 0; border-top: 1px solid #e9ecef;">
-    <p style="margin: 0; color: #6c757d; font-size: 14px;">
-      <strong>DocSpace Medical Reports</strong> - Professional AI-powered medical document generation
-    </p>
-    <p style="margin: 8px 0 0 0; color: #adb5bd; font-size: 12px;">
-      This report was generated using advanced AI technology for enhanced readability and professional presentation.
-    </p>
-  </div>
-</div>
 </div>`,
-          attachments: [{
-              filename: filename || 'medical-report.pdf',
-              content: pdfBuffer,
-              contentType: 'application/pdf'
-          }]
-      };
-      
-      await transporter.sendMail(mailOptions);
-      
-      const duration = Date.now() - startTime;
-      log.info(`🎉 Enhanced PDF request completed successfully [${requestId}]`, { 
-          duration: `${duration}ms`,
-          pdfSize: `${(pdfBuffer.length / 1024).toFixed(2)} KB`,
-          testType: testInfo.testType
-      });
-      
-      res.json({
-          success: true, 
-          message: 'Enhanced medical report PDF generated and sent successfully!', 
-          requestId,
-          pdfSize: `${(pdfBuffer.length / 1024).toFixed(2)} KB`,
-          testType: testInfo.testType,
-          enhancedFeatures: [
-              'Professional gradient headers',
-              'Enhanced typography with better spacing',
-              'Card-based content sections',
-              'Improved table styling with alternating rows',
-              'Better color scheme and visual hierarchy',
-              'Enhanced footer with timestamp',
-              'Shadow effects and modern styling'
-          ]
-      });
+            attachments: [{
+                filename: filename || 'medical-report.pdf',
+                content: pdfBuffer,
+                contentType: 'application/pdf'
+            }]
+        };
+        await transporter.sendMail(mailOptions);
+        
+        const duration = Date.now() - startTime;
+        log.info(`🎉 Request completed successfully [${requestId}]`, { duration: `${duration}ms` });
+        res.json({
+            success: true, message: 'Medical report PDF generated and sent successfully!', requestId,
+        });
 
-  } catch (error) {
-      const duration = Date.now() - startTime;
-      log.error(`💥 Enhanced PDF request failed [${requestId}]`, { 
-          error: error.message, 
-          duration: `${duration}ms`, 
-          stack: error.stack 
-      });
-      
-      let statusCode = 500; 
-      let errorType = 'INTERNAL_ERROR';
-      if (error.message.includes('Decryption failed')) { 
-          statusCode = 400; 
-          errorType = 'DECRYPTION_ERROR'; 
-      }
-      else if (error.message.includes('Email sending failed')) { 
-          statusCode = 503; 
-          errorType = 'EMAIL_ERROR'; 
-      }
-      else if (error.message.includes('PDF generation failed')) { 
-          statusCode = 500; 
-          errorType = 'PDF_ERROR'; 
-      }
-      
-      res.status(statusCode).json({ 
-          error: error.message, 
-          errorType, 
-          requestId,
-          service: 'Enhanced PDF Generation Service'
-      });
-  }
+    } catch (error) {
+        const duration = Date.now() - startTime;
+        log.error(`💥 Request failed [${requestId}]`, { error: error.message, duration: `${duration}ms`, stack: error.stack });
+        let statusCode = 500; let errorType = 'INTERNAL_ERROR';
+        if (error.message.includes('Decryption failed')) { statusCode = 400; errorType = 'DECRYPTION_ERROR'; }
+        else if (error.message.includes('Email sending failed')) { statusCode = 503; errorType = 'EMAIL_ERROR'; }
+        else if (error.message.includes('PDF generation failed')) { statusCode = 500; errorType = 'PDF_ERROR'; }
+        res.status(statusCode).json({ error: error.message, errorType, requestId });
+    }
 });
 
-// Additional debugging: Add error handling for email transport
-// You can also add this function to test email configuration:
-async function testEmailConfiguration() {
-  try {
-      const transporter = nodemailer.createTransport(emailConfig);
-      await transporter.verify();
-      log.info('✅ Email configuration verified successfully');
-      return true;
-  } catch (error) {
-      log.error('❌ Email configuration verification failed', error);
-      return false;
-  }
-}
-
-// Add this to your health check route to verify email config:
-router.get('/health', async (req, res) => {
-  log.info('🏥 Enhanced PDF service health check requested');
-  
-  const emailStatus = await testEmailConfiguration();
-  
-  res.json({
-      status: 'OK',
-      service: 'Enhanced PDF Generation Service (pdf-lib)',
-      version: '2.0.0',
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-      memory: process.memoryUsage(),
-      emailConfiguration: emailStatus ? 'OK' : 'FAILED',
-      features: {
-          supportedFormats: ['structured', 'narrative'],
-          enhancements: [
-              'Modern gradient headers',
-              'Professional typography',
-              'Card-based layouts',
-              'Enhanced table styling',
-              'Improved color schemes',
-              'Shadow effects',
-              'Better spacing and margins',
-              'Responsive design elements'
-          ],
-          fontSupport: ['NotoSans Regular', 'NotoSans Bold', 'NotoSans Italic'],
-          colorPalette: {
-              primary: '#1155AB',
-              secondary: '#1E90CB', 
-              accent: '#3498DB',
-              success: '#27AE60',
-              warning: '#F39C12',
-              danger: '#E74C3C'
-          }
-      }
-  });
-});
-
-// ENHANCED HEALTH CHECK ROUTE
+// HEALTH CHECK ROUTE
 router.get('/health', (req, res) => {
-    log.info('🏥 Enhanced PDF service health check requested');
+    log.info('🏥 PDF service health check requested');
     res.json({
         status: 'OK',
-        service: 'Enhanced PDF Generation Service (pdf-lib)',
-        version: '2.0.0',
+        service: 'PDF Generation Service (pdf-lib)',
         timestamp: new Date().toISOString(),
         uptime: process.uptime(),
         memory: process.memoryUsage(),
-        features: {
-            supportedFormats: ['structured', 'narrative'],
-            enhancements: [
-                'Modern gradient headers',
-                'Professional typography',
-                'Card-based layouts',
-                'Enhanced table styling',
-                'Improved color schemes',
-                'Shadow effects',
-                'Better spacing and margins',
-                'Responsive design elements'
-            ],
-            fontSupport: ['NotoSans Regular', 'NotoSans Bold', 'NotoSans Italic'],
-            colorPalette: {
-                primary: '#1155AB',
-                secondary: '#1E90CB', 
-                accent: '#3498DB',
-                success: '#27AE60',
-                warning: '#F39C12',
-                danger: '#E74C3C'
-            }
-        }
-    });
-});
-
-// PREVIEW ROUTE FOR TESTING STYLES
-router.get('/preview-styles', (req, res) => {
-    res.json({
-        message: 'Enhanced PDF styling preview',
-        styles: styles,
-        sampleMarkdown: `# Medical Report
-
-## Patient Information
-**Name:** John Doe  
-**Age:** 45  
-**Date:** ${new Date().toLocaleDateString()}
-
-## Test Results
-
-### Blood Chemistry Panel
-
-| Test | Result | Reference Range | Status |
-|------|--------|----------------|---------|
-| Glucose | 95 mg/dL | 70-100 mg/dL | Normal |
-| Cholesterol | 220 mg/dL | <200 mg/dL | High |
-| HDL | 45 mg/dL | >40 mg/dL | Normal |
-
-### Clinical Notes
-
-🧪 **Test Results:** All major parameters within acceptable ranges.
-
-🔍 **Clinical Findings:** Slightly elevated cholesterol levels noted.
-
-🧑‍⚕️ **Medical Assessment:** Recommend dietary modifications and follow-up in 3 months.
-
-#### Recommendations
-
-- Reduce saturated fat intake
-- Increase physical activity
-- Schedule follow-up appointment
-- Consider statin therapy if levels remain elevated
-
-**Important:** This is a sample report for styling demonstration purposes only.`
+        supportedFormats: ['structured', 'narrative']
     });
 });
 
