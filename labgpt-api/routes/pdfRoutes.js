@@ -2763,7 +2763,17 @@ router.post('/generate', async (req, res) => {
     
     log.info(`📧 Step 3: Sending email [${requestId}]`, { to: emailAddress });
     
-    const transporter = nodemailer.createTransporter(emailConfig);
+    // Debug email configuration
+    log.debug(`📧 Email config check [${requestId}]`, {
+      host: emailConfig.host,
+      port: emailConfig.port,
+      secure: emailConfig.secure,
+      hasUser: !!emailConfig.auth.user,
+      hasPass: !!emailConfig.auth.pass,
+      userLength: emailConfig.auth.user ? emailConfig.auth.user.length : 0
+    });
+    
+    const transporter = nodemailer.createTransport(emailConfig);
     const testInfo = extractTestInfo(aiInterpretation);
     
     const mailOptions = {
@@ -2778,7 +2788,13 @@ router.post('/generate', async (req, res) => {
       }]
     };
     
-    await transporter.sendMail(mailOptions);
+    try {
+      await transporter.sendMail(mailOptions);
+      log.info(`📧 Email sent successfully [${requestId}]`, { to: emailAddress });
+    } catch (emailError) {
+      log.error(`📧 Email sending failed [${requestId}]`, emailError);
+      throw new Error(`Email sending failed: ${emailError.message}`);
+    }
     
     const duration = Date.now() - startTime;
     log.info(`🎉 Request completed successfully [${requestId}]`, { duration: `${duration}ms`, to: emailAddress });
@@ -2800,7 +2816,11 @@ router.post('/generate', async (req, res) => {
     
   } catch (error) {
     const duration = Date.now() - startTime;
-    log.error(`💥 Request failed [${requestId}]`, { error: error.message, duration: `${duration}ms` });
+    log.error(`💥 Request failed [${requestId}]`, { 
+      error: error.message, 
+      duration: `${duration}ms`,
+      stack: error.stack 
+    });
     
     let statusCode = 500;
     let errorType = 'INTERNAL_ERROR';
@@ -2815,7 +2835,13 @@ router.post('/generate', async (req, res) => {
       errorType = 'PDF_ERROR';
     }
     
-    res.status(statusCode).json({ error: error.message, errorType, requestId, duration });
+    res.status(statusCode).json({ 
+      error: error.message, 
+      errorType, 
+      requestId, 
+      duration,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 });
 
