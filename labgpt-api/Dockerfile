@@ -5,14 +5,14 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
 
 WORKDIR /usr/src/app
 
-# Copy package files first for better caching
-COPY package.json package-lock.json ./
+# Copy package files from the labgpt-api subdirectory
+COPY labgpt-api/package*.json ./
 
 # Install dependencies
-RUN npm ci --only=production
+RUN npm ci --only=production || npm install --production
 
-# Copy application code
-COPY . .
+# Copy application code from the labgpt-api subdirectory
+COPY labgpt-api/ ./
 
 # Create non-root user for security (optional but recommended)
 RUN groupadd -r pptruser && useradd -r -g pptruser -G audio,video pptruser \
