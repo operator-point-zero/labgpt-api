@@ -1,6 +1,0 @@
-{
-  "dependencies": {
-    "html-pdf": "^3.0.1",
-    "pdf-lib": "^1.17.1"
-  }
-}
