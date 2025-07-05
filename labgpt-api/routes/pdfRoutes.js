@@ -2328,6 +2328,7 @@ function generateHTML(markdownText, testInfo, filename) {
 // }
 
 // SIMPLIFIED MARKDOWN TO PDF CONVERTER FOR PUPPETEER DOCKER IMAGE
+// CLEAN MARKDOWN TO PDF CONVERTER FOR OFFICIAL PUPPETEER DOCKER IMAGE
 async function markdownToPDF(markdownText, filename = 'document.pdf') {
   log.debug('📝 Starting markdown to PDF conversion using Puppeteer');
 
@@ -2339,31 +2340,24 @@ async function markdownToPDF(markdownText, filename = 'document.pdf') {
     const htmlContent = generateHTML(markdownText, testInfo, filename);
     log.debug('📄 Generated HTML content', { htmlLength: htmlContent.length });
 
-    // Simple launch configuration for Puppeteer Docker image
+    // Launch browser with minimal configuration for official Puppeteer image
     browser = await puppeteer.launch({
       headless: true,
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--disable-web-security',
-        '--disable-features=VizDisplayCompositor'
+        '--disable-dev-shm-usage'
       ]
     });
 
     const page = await browser.newPage();
-
-    // Set viewport
     await page.setViewport({ width: 1200, height: 800 });
-
-    // Load the HTML content
+    
     await page.setContent(htmlContent, { 
       waitUntil: 'networkidle0',
       timeout: 30000
     });
 
-    // Generate PDF
     const pdfBuffer = await page.pdf({
       format: 'A4',
       printBackground: true,
