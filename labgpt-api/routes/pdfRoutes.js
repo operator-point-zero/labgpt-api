@@ -4711,153 +4711,359 @@ async function markdownToPDF(markdownText, filename = 'document.pdf') {
 }
 
 // PDF GENERATION ROUTE
-router.post('/generate', async (req, res) => {
-    const startTime = Date.now();
-    const requestId = Math.random().toString(36).substring(7);
+// router.post('/generate', async (req, res) => {
+//     const startTime = Date.now();
+//     const requestId = Math.random().toString(36).substring(7);
 
-    log.info(`🚀 New enhanced PDF generation request [${requestId}]`);
+//     log.info(`🚀 New enhanced PDF generation request [${requestId}]`);
 
-    try {
-        const { encryptedContent, clientId, emailAddress, filename } = req.body;
-        if (!encryptedContent || !clientId || !emailAddress) {
-            return res.status(400).json({ error: 'Missing required fields' });
-        }
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(emailAddress)) {
-            return res.status(400).json({ error: 'Invalid email format' });
-        }
+//     try {
+//         const { encryptedContent, clientId, emailAddress, filename } = req.body;
+//         if (!encryptedContent || !clientId || !emailAddress) {
+//             return res.status(400).json({ error: 'Missing required fields' });
+//         }
+//         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+//         if (!emailRegex.test(emailAddress)) {
+//             return res.status(400).json({ error: 'Invalid email format' });
+//         }
 
-        log.info(`🔓 Step 1: Decrypting content [${requestId}]`);
-        const aiInterpretation = decrypt(encryptedContent, clientId);
-        const testInfo = extractTestInfo(aiInterpretation);
+//         log.info(`🔓 Step 1: Decrypting content [${requestId}]`);
+//         const aiInterpretation = decrypt(encryptedContent, clientId);
+//         const testInfo = extractTestInfo(aiInterpretation);
 
-        log.info(`📄 Step 2: Generating enhanced PDF [${requestId}]`);
-        const pdfBuffer = await markdownToPDF(aiInterpretation, filename);
+//         log.info(`📄 Step 2: Generating enhanced PDF [${requestId}]`);
+//         const pdfBuffer = await markdownToPDF(aiInterpretation, filename);
         
-        log.info(`📧 Step 3: Sending email [${requestId}]`);
-        const transporter = nodemailer.createTransporter(emailConfig);
-        const mailOptions = {
-            from: emailConfig.auth.user,
-            to: emailAddress,
-            subject: `Your ${testInfo.testType} Report: ${filename || 'medical-report.pdf'}`,
-            html: `
-<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; background: #f8f9fa;">
-  <div style="text-align: center; padding: 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
-    <img src="https://labmate.docspace.co.ke/labmatelogo.png" alt="LabMate Logo" style="max-width: 180px; height: auto; margin-bottom: 20px;">
-    <h1 style="color: white; margin: 0; font-size: 24px; font-weight: 600;">📋 Medical Report Ready</h1>
-    <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0 0; font-size: 16px;">Your report has been generated successfully</p>
-  </div>
+//         log.info(`📧 Step 3: Sending email [${requestId}]`);
+//         const transporter = nodemailer.createTransporter(emailConfig);
+//         const mailOptions = {
+//             from: emailConfig.auth.user,
+//             to: emailAddress,
+//             subject: `Your ${testInfo.testType} Report: ${filename || 'medical-report.pdf'}`,
+//             html: `
+// <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; background: #f8f9fa;">
+//   <div style="text-align: center; padding: 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+//     <img src="https://labmate.docspace.co.ke/labmatelogo.png" alt="LabMate Logo" style="max-width: 180px; height: auto; margin-bottom: 20px;">
+//     <h1 style="color: white; margin: 0; font-size: 24px; font-weight: 600;">📋 Medical Report Ready</h1>
+//     <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0 0; font-size: 16px;">Your report has been generated successfully</p>
+//   </div>
   
-  <div style="background: white; padding: 40px; border-radius: 0 0 12px 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-    <div style="background: #f8f9fa; padding: 24px; border-radius: 8px; border-left: 4px solid #1155AB; margin-bottom: 24px;">
-      <h3 style="margin: 0 0 16px 0; color: #1155AB; font-size: 18px;">📄 Report Details</h3>
-      <div style="display: grid; gap: 12px;">
-        <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e9ecef;">
-          <span style="font-weight: 600; color: #495057;">📁 Filename:</span>
-          <span style="color: #6c757d;">${filename || 'medical-report.pdf'}</span>
-        </div>
-        <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e9ecef;">
-          <span style="font-weight: 600; color: #495057;">🧪 Test Type:</span>
-          <span style="color: #6c757d;">${testInfo.testType}</span>
-        </div>
-        <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e9ecef;">
-          <span style="font-weight: 600; color: #495057;">📅 Generated:</span>
-          <span style="color: #6c757d;">${new Date().toLocaleString()}</span>
-        </div>
-        <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e9ecef;">
-          <span style="font-weight: 600; color: #495057;">📦 Size:</span>
-          <span style="color: #6c757d;">${(pdfBuffer.length / 1024).toFixed(2)} KB</span>
-        </div>
-        <div style="display: flex; justify-content: space-between; padding: 8px 0;">
-          <span style="font-weight: 600; color: #495057;">🆔 Request ID:</span>
-          <span style="color: #6c757d; font-family: monospace;">${requestId}</span>
-        </div>
+//   <div style="background: white; padding: 40px; border-radius: 0 0 12px 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+//     <div style="background: #f8f9fa; padding: 24px; border-radius: 8px; border-left: 4px solid #1155AB; margin-bottom: 24px;">
+//       <h3 style="margin: 0 0 16px 0; color: #1155AB; font-size: 18px;">📄 Report Details</h3>
+//       <div style="display: grid; gap: 12px;">
+//         <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e9ecef;">
+//           <span style="font-weight: 600; color: #495057;">📁 Filename:</span>
+//           <span style="color: #6c757d;">${filename || 'medical-report.pdf'}</span>
+//         </div>
+//         <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e9ecef;">
+//           <span style="font-weight: 600; color: #495057;">🧪 Test Type:</span>
+//           <span style="color: #6c757d;">${testInfo.testType}</span>
+//         </div>
+//         <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e9ecef;">
+//           <span style="font-weight: 600; color: #495057;">📅 Generated:</span>
+//           <span style="color: #6c757d;">${new Date().toLocaleString()}</span>
+//         </div>
+//         <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e9ecef;">
+//           <span style="font-weight: 600; color: #495057;">📦 Size:</span>
+//           <span style="color: #6c757d;">${(pdfBuffer.length / 1024).toFixed(2)} KB</span>
+//         </div>
+//         <div style="display: flex; justify-content: space-between; padding: 8px 0;">
+//           <span style="font-weight: 600; color: #495057;">🆔 Request ID:</span>
+//           <span style="color: #6c757d; font-family: monospace;">${requestId}</span>
+//         </div>
+//       </div>
+//     </div>
+    
+//     <div style="background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); border: 1px solid #ffeaa7; color: #856404; padding: 20px; border-radius: 8px; margin-bottom: 24px;">
+//       <h4 style="margin: 0 0 8px 0; font-size: 16px; display: flex; align-items: center;">
+//         <span style="margin-right: 8px;">⚠️</span>
+//         Important Medical Disclaimer
+//       </h4>
+//       <p style="margin: 0; line-height: 1.5; font-size: 14px;">
+//         This AI-generated interpretation is for informational purposes only and should not replace professional medical advice. 
+//         Always consult with your healthcare provider for proper medical guidance.
+//       </p>
+//     </div>
+    
+//     <div style="text-align: center; padding: 20px 0; border-top: 1px solid #e9ecef;">
+//       <p style="margin: 0; color: #6c757d; font-size: 14px;">
+//         <strong>DocSpace Medical Reports</strong> - Professional AI-powered medical document generation
+//       </p>
+//       <p style="margin: 8px 0 0 0; color: #adb5bd; font-size: 12px;">
+//         This report was generated using advanced AI technology for enhanced readability and professional presentation.
+//       </p>
+//     </div>
+//   </div>
+// </div>`,
+//             attachments: [{
+//                 filename: filename || 'medical-report.pdf',
+//                 content: pdfBuffer,
+//                 contentType: 'application/pdf'
+//             }]
+//         };
+//         await transporter.sendMail(mailOptions);
+        
+//         const duration = Date.now() - startTime;
+//         log.info(`🎉 Enhanced PDF request completed successfully [${requestId}]`, { 
+//             duration: `${duration}ms`,
+//             pdfSize: `${(pdfBuffer.length / 1024).toFixed(2)} KB`,
+//             testType: testInfo.testType
+//         });
+        
+//         res.json({
+//             success: true, 
+//             message: 'Enhanced medical report PDF generated and sent successfully!', 
+//             requestId,
+//             pdfSize: `${(pdfBuffer.length / 1024).toFixed(2)} KB`,
+//             testType: testInfo.testType,
+//             enhancedFeatures: [
+//                 'Professional gradient headers',
+//                 'Enhanced typography with better spacing',
+//                 'Card-based content sections',
+//                 'Improved table styling with alternating rows',
+//                 'Better color scheme and visual hierarchy',
+//                 'Enhanced footer with timestamp',
+//                 'Shadow effects and modern styling'
+//             ]
+//         });
+
+//     } catch (error) {
+//         const duration = Date.now() - startTime;
+//         log.error(`💥 Enhanced PDF request failed [${requestId}]`, { 
+//             error: error.message, 
+//             duration: `${duration}ms`, 
+//             stack: error.stack 
+//         });
+        
+//         let statusCode = 500; 
+//         let errorType = 'INTERNAL_ERROR';
+//         if (error.message.includes('Decryption failed')) { 
+//             statusCode = 400; 
+//             errorType = 'DECRYPTION_ERROR'; 
+//         }
+//         else if (error.message.includes('Email sending failed')) { 
+//             statusCode = 503; 
+//             errorType = 'EMAIL_ERROR'; 
+//         }
+//         else if (error.message.includes('PDF generation failed')) { 
+//             statusCode = 500; 
+//             errorType = 'PDF_ERROR'; 
+//         }
+        
+//         res.status(statusCode).json({ 
+//             error: error.message, 
+//             errorType, 
+//             requestId,
+//             service: 'Enhanced PDF Generation Service'
+//         });
+//     }
+// });
+
+router.post('/generate', async (req, res) => {
+  const startTime = Date.now();
+  const requestId = Math.random().toString(36).substring(7);
+
+  log.info(`🚀 New enhanced PDF generation request [${requestId}]`);
+
+  try {
+      const { encryptedContent, clientId, emailAddress, filename } = req.body;
+      if (!encryptedContent || !clientId || !emailAddress) {
+          return res.status(400).json({ error: 'Missing required fields' });
+      }
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(emailAddress)) {
+          return res.status(400).json({ error: 'Invalid email format' });
+      }
+
+      log.info(`🔓 Step 1: Decrypting content [${requestId}]`);
+      const aiInterpretation = decrypt(encryptedContent, clientId);
+      const testInfo = extractTestInfo(aiInterpretation);
+
+      log.info(`📄 Step 2: Generating enhanced PDF [${requestId}]`);
+      const pdfBuffer = await markdownToPDF(aiInterpretation, filename);
+      
+      log.info(`📧 Step 3: Sending email [${requestId}]`);
+      
+      // CORRECTED LINE: Use createTransport instead of createTransporter
+      const transporter = nodemailer.createTransport(emailConfig);
+      
+      const mailOptions = {
+          from: emailConfig.auth.user,
+          to: emailAddress,
+          subject: `Your ${testInfo.testType} Report: ${filename || 'medical-report.pdf'}`,
+          html: `
+<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; background: #f8f9fa;">
+<div style="text-align: center; padding: 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+  <img src="https://labmate.docspace.co.ke/labmatelogo.png" alt="LabMate Logo" style="max-width: 180px; height: auto; margin-bottom: 20px;">
+  <h1 style="color: white; margin: 0; font-size: 24px; font-weight: 600;">📋 Medical Report Ready</h1>
+  <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0 0; font-size: 16px;">Your report has been generated successfully</p>
+</div>
+
+<div style="background: white; padding: 40px; border-radius: 0 0 12px 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+  <div style="background: #f8f9fa; padding: 24px; border-radius: 8px; border-left: 4px solid #1155AB; margin-bottom: 24px;">
+    <h3 style="margin: 0 0 16px 0; color: #1155AB; font-size: 18px;">📄 Report Details</h3>
+    <div style="display: grid; gap: 12px;">
+      <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e9ecef;">
+        <span style="font-weight: 600; color: #495057;">📁 Filename:</span>
+        <span style="color: #6c757d;">${filename || 'medical-report.pdf'}</span>
+      </div>
+      <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e9ecef;">
+        <span style="font-weight: 600; color: #495057;">🧪 Test Type:</span>
+        <span style="color: #6c757d;">${testInfo.testType}</span>
+      </div>
+      <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e9ecef;">
+        <span style="font-weight: 600; color: #495057;">📅 Generated:</span>
+        <span style="color: #6c757d;">${new Date().toLocaleString()}</span>
+      </div>
+      <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e9ecef;">
+        <span style="font-weight: 600; color: #495057;">📦 Size:</span>
+        <span style="color: #6c757d;">${(pdfBuffer.length / 1024).toFixed(2)} KB</span>
+      </div>
+      <div style="display: flex; justify-content: space-between; padding: 8px 0;">
+        <span style="font-weight: 600; color: #495057;">🆔 Request ID:</span>
+        <span style="color: #6c757d; font-family: monospace;">${requestId}</span>
       </div>
     </div>
-    
-    <div style="background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); border: 1px solid #ffeaa7; color: #856404; padding: 20px; border-radius: 8px; margin-bottom: 24px;">
-      <h4 style="margin: 0 0 8px 0; font-size: 16px; display: flex; align-items: center;">
-        <span style="margin-right: 8px;">⚠️</span>
-        Important Medical Disclaimer
-      </h4>
-      <p style="margin: 0; line-height: 1.5; font-size: 14px;">
-        This AI-generated interpretation is for informational purposes only and should not replace professional medical advice. 
-        Always consult with your healthcare provider for proper medical guidance.
-      </p>
-    </div>
-    
-    <div style="text-align: center; padding: 20px 0; border-top: 1px solid #e9ecef;">
-      <p style="margin: 0; color: #6c757d; font-size: 14px;">
-        <strong>DocSpace Medical Reports</strong> - Professional AI-powered medical document generation
-      </p>
-      <p style="margin: 8px 0 0 0; color: #adb5bd; font-size: 12px;">
-        This report was generated using advanced AI technology for enhanced readability and professional presentation.
-      </p>
-    </div>
   </div>
+  
+  <div style="background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); border: 1px solid #ffeaa7; color: #856404; padding: 20px; border-radius: 8px; margin-bottom: 24px;">
+    <h4 style="margin: 0 0 8px 0; font-size: 16px; display: flex; align-items: center;">
+      <span style="margin-right: 8px;">⚠️</span>
+      Important Medical Disclaimer
+    </h4>
+    <p style="margin: 0; line-height: 1.5; font-size: 14px;">
+      This AI-generated interpretation is for informational purposes only and should not replace professional medical advice. 
+      Always consult with your healthcare provider for proper medical guidance.
+    </p>
+  </div>
+  
+  <div style="text-align: center; padding: 20px 0; border-top: 1px solid #e9ecef;">
+    <p style="margin: 0; color: #6c757d; font-size: 14px;">
+      <strong>DocSpace Medical Reports</strong> - Professional AI-powered medical document generation
+    </p>
+    <p style="margin: 8px 0 0 0; color: #adb5bd; font-size: 12px;">
+      This report was generated using advanced AI technology for enhanced readability and professional presentation.
+    </p>
+  </div>
+</div>
 </div>`,
-            attachments: [{
-                filename: filename || 'medical-report.pdf',
-                content: pdfBuffer,
-                contentType: 'application/pdf'
-            }]
-        };
-        await transporter.sendMail(mailOptions);
-        
-        const duration = Date.now() - startTime;
-        log.info(`🎉 Enhanced PDF request completed successfully [${requestId}]`, { 
-            duration: `${duration}ms`,
-            pdfSize: `${(pdfBuffer.length / 1024).toFixed(2)} KB`,
-            testType: testInfo.testType
-        });
-        
-        res.json({
-            success: true, 
-            message: 'Enhanced medical report PDF generated and sent successfully!', 
-            requestId,
-            pdfSize: `${(pdfBuffer.length / 1024).toFixed(2)} KB`,
-            testType: testInfo.testType,
-            enhancedFeatures: [
-                'Professional gradient headers',
-                'Enhanced typography with better spacing',
-                'Card-based content sections',
-                'Improved table styling with alternating rows',
-                'Better color scheme and visual hierarchy',
-                'Enhanced footer with timestamp',
-                'Shadow effects and modern styling'
-            ]
-        });
+          attachments: [{
+              filename: filename || 'medical-report.pdf',
+              content: pdfBuffer,
+              contentType: 'application/pdf'
+          }]
+      };
+      
+      await transporter.sendMail(mailOptions);
+      
+      const duration = Date.now() - startTime;
+      log.info(`🎉 Enhanced PDF request completed successfully [${requestId}]`, { 
+          duration: `${duration}ms`,
+          pdfSize: `${(pdfBuffer.length / 1024).toFixed(2)} KB`,
+          testType: testInfo.testType
+      });
+      
+      res.json({
+          success: true, 
+          message: 'Enhanced medical report PDF generated and sent successfully!', 
+          requestId,
+          pdfSize: `${(pdfBuffer.length / 1024).toFixed(2)} KB`,
+          testType: testInfo.testType,
+          enhancedFeatures: [
+              'Professional gradient headers',
+              'Enhanced typography with better spacing',
+              'Card-based content sections',
+              'Improved table styling with alternating rows',
+              'Better color scheme and visual hierarchy',
+              'Enhanced footer with timestamp',
+              'Shadow effects and modern styling'
+          ]
+      });
 
-    } catch (error) {
-        const duration = Date.now() - startTime;
-        log.error(`💥 Enhanced PDF request failed [${requestId}]`, { 
-            error: error.message, 
-            duration: `${duration}ms`, 
-            stack: error.stack 
-        });
-        
-        let statusCode = 500; 
-        let errorType = 'INTERNAL_ERROR';
-        if (error.message.includes('Decryption failed')) { 
-            statusCode = 400; 
-            errorType = 'DECRYPTION_ERROR'; 
-        }
-        else if (error.message.includes('Email sending failed')) { 
-            statusCode = 503; 
-            errorType = 'EMAIL_ERROR'; 
-        }
-        else if (error.message.includes('PDF generation failed')) { 
-            statusCode = 500; 
-            errorType = 'PDF_ERROR'; 
-        }
-        
-        res.status(statusCode).json({ 
-            error: error.message, 
-            errorType, 
-            requestId,
-            service: 'Enhanced PDF Generation Service'
-        });
-    }
+  } catch (error) {
+      const duration = Date.now() - startTime;
+      log.error(`💥 Enhanced PDF request failed [${requestId}]`, { 
+          error: error.message, 
+          duration: `${duration}ms`, 
+          stack: error.stack 
+      });
+      
+      let statusCode = 500; 
+      let errorType = 'INTERNAL_ERROR';
+      if (error.message.includes('Decryption failed')) { 
+          statusCode = 400; 
+          errorType = 'DECRYPTION_ERROR'; 
+      }
+      else if (error.message.includes('Email sending failed')) { 
+          statusCode = 503; 
+          errorType = 'EMAIL_ERROR'; 
+      }
+      else if (error.message.includes('PDF generation failed')) { 
+          statusCode = 500; 
+          errorType = 'PDF_ERROR'; 
+      }
+      
+      res.status(statusCode).json({ 
+          error: error.message, 
+          errorType, 
+          requestId,
+          service: 'Enhanced PDF Generation Service'
+      });
+  }
+});
+
+// Additional debugging: Add error handling for email transport
+// You can also add this function to test email configuration:
+async function testEmailConfiguration() {
+  try {
+      const transporter = nodemailer.createTransport(emailConfig);
+      await transporter.verify();
+      log.info('✅ Email configuration verified successfully');
+      return true;
+  } catch (error) {
+      log.error('❌ Email configuration verification failed', error);
+      return false;
+  }
+}
+
+// Add this to your health check route to verify email config:
+router.get('/health', async (req, res) => {
+  log.info('🏥 Enhanced PDF service health check requested');
+  
+  const emailStatus = await testEmailConfiguration();
+  
+  res.json({
+      status: 'OK',
+      service: 'Enhanced PDF Generation Service (pdf-lib)',
+      version: '2.0.0',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      memory: process.memoryUsage(),
+      emailConfiguration: emailStatus ? 'OK' : 'FAILED',
+      features: {
+          supportedFormats: ['structured', 'narrative'],
+          enhancements: [
+              'Modern gradient headers',
+              'Professional typography',
+              'Card-based layouts',
+              'Enhanced table styling',
+              'Improved color schemes',
+              'Shadow effects',
+              'Better spacing and margins',
+              'Responsive design elements'
+          ],
+          fontSupport: ['NotoSans Regular', 'NotoSans Bold', 'NotoSans Italic'],
+          colorPalette: {
+              primary: '#1155AB',
+              secondary: '#1E90CB', 
+              accent: '#3498DB',
+              success: '#27AE60',
+              warning: '#F39C12',
+              danger: '#E74C3C'
+          }
+      }
+  });
 });
 
 // ENHANCED HEALTH CHECK ROUTE
