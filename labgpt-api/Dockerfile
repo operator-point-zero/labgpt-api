@@ -14,15 +14,6 @@ RUN npm ci --only=production || npm install --production
 # Copy application code from the labgpt-api subdirectory
 COPY labgpt-api/ ./
 
-# Create non-root user for security (optional but recommended)
-RUN groupadd -r pptruser && useradd -r -g pptruser -G audio,video pptruser \
-    && mkdir -p /home/pptruser/Downloads \
-    && chown -R pptruser:pptruser /home/pptruser \
-    && chown -R pptruser:pptruser /usr/src/app
-
-# Switch to non-root user
-USER pptruser
-
 # Expose port (adjust if your app uses a different port)
 EXPOSE 3000
 
