@@ -1,12 +1,10 @@
-# Use an official Node.js runtime as a parent image
-# Using a specific version is recommended for stability
+# Use Node.js base image
 FROM node:18-slim
 
-# Set the working directory in the container
+# Set working directory
 WORKDIR /usr/src/app
 
-# Install necessary dependencies for Puppeteer/Chromium
-# This is the most important step for Render
+# Install Puppeteer/Chromium dependencies
 RUN apt-get update \
     && apt-get install -yq --no-install-recommends \
     chromium \
@@ -14,26 +12,23 @@ RUN apt-get update \
     libu2f-udev \
     libvulkan1 \
     ca-certificates \
-    # Clean up
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy package.json and package-lock.json (or yarn.lock)
-COPY package*.json ./
+# Copy package files from subfolder
+COPY labgpt-api/package*.json ./
 
-# Install app dependencies
+# Install production dependencies
 RUN npm install --production
 
-# Copy the rest of your app's source code
-COPY . .
+# Copy app code from subfolder
+COPY labgpt-api .
 
-# Tell Puppeteer to use the Chromium binary we installed via apt-get
-# This prevents it from downloading its own version
+# Set Puppeteer Chromium path
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
-# Your app binds to this port
+# Expose the correct port
 EXPOSE 10000
 
-# Define the command to run your app
-# Replace 'your-main-app-file.js' with your entry point file (e.g., index.js, server.js)
-CMD [ "node", "server.js" ]
+# Start the server
+CMD ["node", "server.js"]
