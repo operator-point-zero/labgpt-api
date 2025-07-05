@@ -5,7 +5,25 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
 
 WORKDIR /usr/src/app
 
-COPY package*.json ./
-RUN npm ci
+# Copy package files first for better caching
+COPY package.json package-lock.json ./
+
+# Install dependencies
+RUN npm ci --only=production
+
+# Copy application code
 COPY . .
-CMD [ "node", "server.js" ]
+
+# Create non-root user for security (optional but recommended)
+RUN groupadd -r pptruser && useradd -r -g pptruser -G audio,video pptruser \
+    && mkdir -p /home/pptruser/Downloads \
+    && chown -R pptruser:pptruser /home/pptruser \
+    && chown -R pptruser:pptruser /usr/src/app
+
+# Switch to non-root user
+USER pptruser
+
+# Expose port (adjust if your app uses a different port)
+EXPOSE 3000
+
+CMD ["node", "server.js"]
