@@ -25,7 +25,7 @@ const userSchema = new mongoose.Schema({
   // Your app-specific access fields:
   singleLabInterpretationsRemaining: {
     type: Number,
-    default: 0
+    default: 2
   },
   subscription: {
     isSubscribed: {
