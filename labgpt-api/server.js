@@ -13,7 +13,6 @@ const middleware = require('./middleware');
 // Import routes
 const labRoutes = require('./routes/labRoutes');
 const healthRoutes = require('./routes/healthRoutes');
-const pdfRoutes = require('./routes/pdfRoutes'); // NEW: PDF routes
 
 // Create router files for these if they don't exist, or comment them out for now
 const authRoutes = require('../labgpt-api/controllers/auth');
@@ -29,7 +28,6 @@ middleware(app);
 // Use routes
 app.use('/api/labs', labRoutes);
 app.use('/api/health', healthRoutes);
-app.use('/api/pdf', pdfRoutes); // NEW: PDF routes
 
 // Comment these out until you create proper router files
 app.use('/api/auth', authRoutes);
@@ -54,11 +52,6 @@ app.use('/health', (req, res, next) => {
   healthRoutes(req, res, next);
 });
 
-// NEW: PDF backward compatibility
-app.use('/generate-pdf', (req, res, next) => {
-  req.url = req.url.replace('/generate-pdf', '/generate');
-  pdfRoutes(req, res, next);
-});
 
 // Start the server
 app.listen(port, () => {

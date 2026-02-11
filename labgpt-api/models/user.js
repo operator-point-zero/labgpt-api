@@ -38,6 +38,17 @@ const userSchema = new mongoose.Schema({
     expiryDate: Date,
     packageType: String
   }
+  ,
+  // Refresh tokens are stored as hashed values for security.
+  refreshTokens: [
+    {
+      tokenHash: String,
+      createdAt: {
+        type: Date,
+        default: Date.now
+      }
+    }
+  ]
 }, {
   timestamps: true
 });
