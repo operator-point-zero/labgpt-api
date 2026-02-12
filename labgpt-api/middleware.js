@@ -41,6 +41,8 @@ module.exports = (app) => {
     '/api/auth',
     '/api/health',
     '/api/pdf',
+    '/api/status',    // ✅ ADD THIS
+    '/ping',          
     '/'
   ];
 
