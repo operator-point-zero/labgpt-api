@@ -1,4 +1,3 @@
-
 const express = require('express');
 const router = express.Router();
 const User = require('../models/user');
@@ -158,7 +157,7 @@ router.post('/oauth', async (req, res) => {
     res.cookie('refreshToken', rawRefreshToken, cookieOptions);
 
     // ✅ MODIFIED: Return refreshToken in response body for mobile clients
-    res.status(200).json({
+    return res.status(200).json({
       message: 'User authenticated',
       user,
       accessToken,
@@ -167,7 +166,7 @@ router.post('/oauth', async (req, res) => {
 
   } catch (err) {
     console.error('OAuth error:', err);
-    res.status(500).json({ message: 'Server error' });
+    return res.status(500).json({ message: 'Server error' });
   }
 });
 
@@ -198,7 +197,11 @@ router.post('/refresh', async (req, res) => {
     };
     res.cookie('refreshToken', newRaw, cookieOptions);
 
-    return res.json({ accessToken });
+    // ✅ FIXED: Return both tokens in response body
+    return res.json({ 
+      accessToken,
+      refreshToken: newRaw 
+    });
   } catch (err) {
     console.error('Refresh error', err);
     return res.status(500).json({ message: 'Server error' });
