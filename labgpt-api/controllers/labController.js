@@ -602,6 +602,261 @@
 //   }
 // }
 
+// const { interpretLabText } = require('../services/openaiService');
+// const Test = require('../models/test');
+// const User = require('../models/user');
+// const crypto = require('crypto');
+
+// // ─── Subscription Helpers ──────────────────────────────────────────────────────
+
+// function checkSubscriptionStatus(user) {
+//   const now = new Date();
+  
+//   if (!user.subscription) {
+//     return { 
+//       isValid: false, 
+//       reason: 'No subscription found',
+//       packageType: null,
+//       expiryDate: null
+//     };
+//   }
+
+//   if (user.subscription.expiryDate) {
+//     const expiryDate = new Date(user.subscription.expiryDate);
+//     if (expiryDate < now) {
+//       return { 
+//         isValid: false, 
+//         reason: 'Subscription has expired', 
+//         expiryDate: user.subscription.expiryDate,
+//         packageType: user.subscription.packageType
+//       };
+//     }
+//     return { 
+//       isValid: true, 
+//       packageType: user.subscription.packageType, 
+//       expiryDate: user.subscription.expiryDate,
+//       reason: 'Active subscription'
+//     };
+//   }
+
+//   if (user.subscription.isSubscribed) {
+//     return { 
+//       isValid: true, 
+//       packageType: user.subscription.packageType, 
+//       expiryDate: user.subscription.expiryDate,
+//       reason: 'Active subscription'
+//     };
+//   }
+
+//   return { 
+//     isValid: false, 
+//     reason: 'Subscription is not active',
+//     packageType: null,
+//     expiryDate: null
+//   };
+// }
+
+// function canProceedWithInterpretation(user) {
+//   const subscriptionStatus = checkSubscriptionStatus(user);
+
+//   if (user.singleLabInterpretationsRemaining > 0) {
+//     return { 
+//       canProceed: true, 
+//       useCredits: true, 
+//       reason: 'Using remaining lab interpretation credits',
+//       subscriptionStatus
+//     };
+//   }
+
+//   if (subscriptionStatus.isValid) {
+//     return {
+//       canProceed: true,
+//       useCredits: false,
+//       reason: 'Active subscription allows unlimited interpretations',
+//       subscriptionStatus,
+//     };
+//   }
+
+//   return { 
+//     canProceed: false, 
+//     reason: 'No remaining interpretations and no active subscription', 
+//     subscriptionStatus 
+//   };
+// }
+
+// // ─── Input Validation ──────────────────────────────────────────────────────────
+
+// function validateInput(body) {
+//   const { labText, user_id } = body;
+  
+//   if (!labText) {
+//     console.error('[VALIDATION FAILED] labText is missing or null');
+//     return { valid: false, error: 'labText is required' };
+//   }
+  
+//   if (typeof labText !== 'string') {
+//     console.error('[VALIDATION FAILED] labText is not a string');
+//     return { valid: false, error: 'labText must be a string' };
+//   }
+  
+//   if (!user_id) {
+//     console.error('[VALIDATION FAILED] user_id is missing or null');
+//     return { valid: false, error: 'user_id is required' };
+//   }
+  
+//   if (!/^[0-9a-fA-F]{24}$/.test(user_id)) {
+//     console.error('[VALIDATION FAILED] user_id is invalid format');
+//     return { valid: false, error: 'user_id must be a valid MongoDB ObjectId' };
+//   }
+  
+//   return { valid: true };
+// }
+
+// // ─── Main Controller ───────────────────────────────────────────────────────────
+
+// exports.interpretLabResults = async (req, res) => {
+//   const requestTimestamp = new Date().toISOString();
+//   const requestId = crypto.randomBytes(8).toString('hex');
+  
+//   try {
+//     // 1. Destructure plain text fields from the request body
+//     const { labText, testType: clientReportedTestType, user_id } = req.body;
+
+//     // 2. Validate input (checking for labText instead of encryptedLabText)
+//     const validation = validateInput(req.body);
+//     if (!validation.valid) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Invalid request data.',
+//         error: validation.error,
+//         requestId: requestId
+//       });
+//     }
+
+//     // 3. Verify user exists
+//     let user = await User.findById(user_id);
+//     if (!user) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "User account not found.",
+//         error: 'User not found',
+//       });
+//     }
+
+//     // 4. Check authorization (Credits/Subscription)
+//     const authCheck = canProceedWithInterpretation(user);
+//     if (!authCheck.canProceed) {
+//       return res.status(403).json({
+//         success: false,
+//         message: 'You have no remaining credits and no active subscription.',
+//         currentStatus: {
+//           remainingCredits: user.singleLabInterpretationsRemaining,
+//           hasActiveSubscription: authCheck.subscriptionStatus.isValid || false,
+//         },
+//       });
+//     }
+
+//     // 5. Atomic Credit Reservation
+//     const shouldDecrementCredits = authCheck.useCredits;
+//     let creditReserved = false;
+
+//     if (shouldDecrementCredits) {
+//       const updatedUser = await User.findOneAndUpdate(
+//         { _id: user_id, singleLabInterpretationsRemaining: { $gt: 0 } },
+//         { $inc: { singleLabInterpretationsRemaining: -1 }, updatedAt: new Date() },
+//         { new: true }
+//       );
+
+//       if (!updatedUser) {
+//         return res.status(403).json({ success: false, message: 'Credits depleted.' });
+//       }
+
+//       creditReserved = true;
+//       user = updatedUser;
+//     }
+
+//     // 6. Call OpenAI via the service with plain text
+//     let actualTestType, structuredReport, isValidTest;
+//     try {
+//       ({ testType: actualTestType, structuredReport, isValidTest } = await interpretLabText(labText.trim(), requestId));
+//     } catch (aiError) {
+//       console.error(`[${requestId}] AI service error:`, aiError);
+      
+//       // Rollback credit if the AI call fails
+//       if (creditReserved) {
+//         await rollbackCredit(user_id, requestId, requestTimestamp);
+//       }
+      
+//       return res.status(500).json({
+//         success: false,
+//         message: 'AI analysis service failed. Please try again.',
+//         error: aiError.message,
+//       });
+//     }
+
+//     // 7. Store for analytics (non-fatal)
+//     try {
+//       await Test.create({ 
+//         testType: actualTestType, 
+//         userId: user_id,
+//         timestamp: new Date(),
+//         requestId
+//       });
+//     } catch (dbError) {
+//       console.error(`[${requestId}] Analytics DB write failed:`, dbError);
+//     }
+
+//     // 8. Respond with plain stringified JSON
+//     const subscriptionStatus = checkSubscriptionStatus(user);
+
+//     const responseData = {
+//       success: true,
+//       testType: actualTestType,
+//       // Stringified to remain compatible with Flutter's expectations
+//       interpretation: JSON.stringify(structuredReport), 
+//       interpretationFormat: 'structured_json',
+//       isValidTest,
+//       timestamp: requestTimestamp,
+//       requestId,
+//       usage: {
+//         method: shouldDecrementCredits ? 'credits' : 'subscription',
+//         creditsRemaining: user.singleLabInterpretationsRemaining,
+//         creditsUsed: shouldDecrementCredits ? 1 : 0,
+//       },
+//     };
+
+//     if (subscriptionStatus.isValid) {
+//       responseData.subscription = {
+//         isActive: true,
+//         plan: subscriptionStatus.packageType,
+//         expiresOn: subscriptionStatus.expiryDate,
+//       };
+//     }
+
+//     res.status(200).json(responseData);
+
+//   } catch (error) {
+//     console.error(`[${requestId}] Unhandled error:`, error);
+//     res.status(500).json({
+//       success: false,
+//       message: "Internal server error.",
+//       requestId,
+//     });
+//   }
+// };
+
+// async function rollbackCredit(userId, requestId, timestamp) {
+//   try {
+//     await User.findByIdAndUpdate(
+//       userId,
+//       { $inc: { singleLabInterpretationsRemaining: 1 }, updatedAt: new Date() }
+//     );
+//     console.log(`[${timestamp}] [${requestId}] Credit rollback successful for ${userId}.`);
+//   } catch (rollbackError) {
+//     console.error(`[${timestamp}] [${requestId}] CRITICAL: Credit rollback error:`, rollbackError);
+//   }
+// }
+
 const { interpretLabText } = require('../services/openaiService');
 const Test = require('../models/test');
 const User = require('../models/user');
@@ -611,248 +866,86 @@ const crypto = require('crypto');
 
 function checkSubscriptionStatus(user) {
   const now = new Date();
-  
-  if (!user.subscription) {
-    return { 
-      isValid: false, 
-      reason: 'No subscription found',
-      packageType: null,
-      expiryDate: null
-    };
-  }
+  if (!user.subscription) return { isValid: false, reason: 'No subscription' };
 
   if (user.subscription.expiryDate) {
     const expiryDate = new Date(user.subscription.expiryDate);
-    if (expiryDate < now) {
-      return { 
-        isValid: false, 
-        reason: 'Subscription has expired', 
-        expiryDate: user.subscription.expiryDate,
-        packageType: user.subscription.packageType
-      };
-    }
-    return { 
-      isValid: true, 
-      packageType: user.subscription.packageType, 
-      expiryDate: user.subscription.expiryDate,
-      reason: 'Active subscription'
-    };
+    if (expiryDate < now) return { isValid: false, reason: 'Expired' };
+    return { isValid: true };
   }
-
-  if (user.subscription.isSubscribed) {
-    return { 
-      isValid: true, 
-      packageType: user.subscription.packageType, 
-      expiryDate: user.subscription.expiryDate,
-      reason: 'Active subscription'
-    };
-  }
-
-  return { 
-    isValid: false, 
-    reason: 'Subscription is not active',
-    packageType: null,
-    expiryDate: null
-  };
+  return { isValid: user.subscription.isSubscribed || false };
 }
 
 function canProceedWithInterpretation(user) {
-  const subscriptionStatus = checkSubscriptionStatus(user);
-
-  if (user.singleLabInterpretationsRemaining > 0) {
-    return { 
-      canProceed: true, 
-      useCredits: true, 
-      reason: 'Using remaining lab interpretation credits',
-      subscriptionStatus
-    };
-  }
-
-  if (subscriptionStatus.isValid) {
-    return {
-      canProceed: true,
-      useCredits: false,
-      reason: 'Active subscription allows unlimited interpretations',
-      subscriptionStatus,
-    };
-  }
-
-  return { 
-    canProceed: false, 
-    reason: 'No remaining interpretations and no active subscription', 
-    subscriptionStatus 
-  };
+  const status = checkSubscriptionStatus(user);
+  if (user.singleLabInterpretationsRemaining > 0) return { canProceed: true, useCredits: true };
+  if (status.isValid) return { canProceed: true, useCredits: false };
+  return { canProceed: false };
 }
 
-// ─── Input Validation ──────────────────────────────────────────────────────────
-
-function validateInput(body) {
-  const { labText, user_id } = body;
-  
-  if (!labText) {
-    console.error('[VALIDATION FAILED] labText is missing or null');
-    return { valid: false, error: 'labText is required' };
-  }
-  
-  if (typeof labText !== 'string') {
-    console.error('[VALIDATION FAILED] labText is not a string');
-    return { valid: false, error: 'labText must be a string' };
-  }
-  
-  if (!user_id) {
-    console.error('[VALIDATION FAILED] user_id is missing or null');
-    return { valid: false, error: 'user_id is required' };
-  }
-  
-  if (!/^[0-9a-fA-F]{24}$/.test(user_id)) {
-    console.error('[VALIDATION FAILED] user_id is invalid format');
-    return { valid: false, error: 'user_id must be a valid MongoDB ObjectId' };
-  }
-  
-  return { valid: true };
-}
-
-// ─── Main Controller ───────────────────────────────────────────────────────────
+// ─── Controller ────────────────────────────────────────────────────────────────
 
 exports.interpretLabResults = async (req, res) => {
-  const requestTimestamp = new Date().toISOString();
   const requestId = crypto.randomBytes(8).toString('hex');
   
   try {
-    // 1. Destructure plain text fields from the request body
-    const { labText, testType: clientReportedTestType, user_id } = req.body;
+    // 1. Get plain text from Flutter (Matches your 'labText' log)
+    const { labText, user_id, testType } = req.body;
 
-    // 2. Validate input (checking for labText instead of encryptedLabText)
-    const validation = validateInput(req.body);
-    if (!validation.valid) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid request data.',
-        error: validation.error,
-        requestId: requestId
+    // 2. Simple Validation
+    if (!labText || !user_id) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Missing labText or user_id' 
       });
     }
 
-    // 3. Verify user exists
+    // 3. Check User & Credits
     let user = await User.findById(user_id);
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User account not found.",
-        error: 'User not found',
-      });
+    if (!user) return res.status(404).json({ success: false, error: 'User not found' });
+
+    const auth = canProceedWithInterpretation(user);
+    if (!auth.canProceed) {
+      return res.status(403).json({ success: false, message: 'No credits remaining' });
     }
 
-    // 4. Check authorization (Credits/Subscription)
-    const authCheck = canProceedWithInterpretation(user);
-    if (!authCheck.canProceed) {
-      return res.status(403).json({
-        success: false,
-        message: 'You have no remaining credits and no active subscription.',
-        currentStatus: {
-          remainingCredits: user.singleLabInterpretationsRemaining,
-          hasActiveSubscription: authCheck.subscriptionStatus.isValid || false,
-        },
-      });
-    }
-
-    // 5. Atomic Credit Reservation
-    const shouldDecrementCredits = authCheck.useCredits;
-    let creditReserved = false;
-
-    if (shouldDecrementCredits) {
-      const updatedUser = await User.findOneAndUpdate(
-        { _id: user_id, singleLabInterpretationsRemaining: { $gt: 0 } },
-        { $inc: { singleLabInterpretationsRemaining: -1 }, updatedAt: new Date() },
+    // 4. Handle Credits (Atomic Decrement)
+    if (auth.useCredits) {
+      user = await User.findByIdAndUpdate(
+        user_id, 
+        { $inc: { singleLabInterpretationsRemaining: -1 } }, 
         { new: true }
       );
-
-      if (!updatedUser) {
-        return res.status(403).json({ success: false, message: 'Credits depleted.' });
-      }
-
-      creditReserved = true;
-      user = updatedUser;
     }
 
-    // 6. Call OpenAI via the service with plain text
-    let actualTestType, structuredReport, isValidTest;
+    // 5. Call AI Service (openaiService.js)
+    // We pass the plain labText directly now
+    const result = await interpretLabText(labText, requestId);
+
+    // 6. Save to history (Optional/Non-fatal)
     try {
-      ({ testType: actualTestType, structuredReport, isValidTest } = await interpretLabText(labText.trim(), requestId));
-    } catch (aiError) {
-      console.error(`[${requestId}] AI service error:`, aiError);
-      
-      // Rollback credit if the AI call fails
-      if (creditReserved) {
-        await rollbackCredit(user_id, requestId, requestTimestamp);
-      }
-      
-      return res.status(500).json({
-        success: false,
-        message: 'AI analysis service failed. Please try again.',
-        error: aiError.message,
-      });
-    }
+      await Test.create({ testType: result.testType, userId: user_id, requestId });
+    } catch (e) { console.error("History log failed", e); }
 
-    // 7. Store for analytics (non-fatal)
-    try {
-      await Test.create({ 
-        testType: actualTestType, 
-        userId: user_id,
-        timestamp: new Date(),
-        requestId
-      });
-    } catch (dbError) {
-      console.error(`[${requestId}] Analytics DB write failed:`, dbError);
-    }
-
-    // 8. Respond with plain stringified JSON
-    const subscriptionStatus = checkSubscriptionStatus(user);
-
-    const responseData = {
+    // 7. Send Plain Response
+    // We stringify the JSON so the Flutter app's 'jsonDecode' logic doesn't break
+    res.status(200).json({
       success: true,
-      testType: actualTestType,
-      // Stringified to remain compatible with Flutter's expectations
-      interpretation: JSON.stringify(structuredReport), 
-      interpretationFormat: 'structured_json',
-      isValidTest,
-      timestamp: requestTimestamp,
-      requestId,
+      testType: result.testType,
+      interpretation: JSON.stringify(result.structuredReport), 
+      isValidTest: result.isValidTest,
+      requestId: requestId,
       usage: {
-        method: shouldDecrementCredits ? 'credits' : 'subscription',
-        creditsRemaining: user.singleLabInterpretationsRemaining,
-        creditsUsed: shouldDecrementCredits ? 1 : 0,
-      },
-    };
-
-    if (subscriptionStatus.isValid) {
-      responseData.subscription = {
-        isActive: true,
-        plan: subscriptionStatus.packageType,
-        expiresOn: subscriptionStatus.expiryDate,
-      };
-    }
-
-    res.status(200).json(responseData);
+        creditsRemaining: user.singleLabInterpretationsRemaining
+      }
+    });
 
   } catch (error) {
-    console.error(`[${requestId}] Unhandled error:`, error);
+    console.error(`[${requestId}] Server Error:`, error.message);
     res.status(500).json({
       success: false,
-      message: "Internal server error.",
-      requestId,
+      message: "Internal Server Error",
+      error: error.message
     });
   }
 };
-
-async function rollbackCredit(userId, requestId, timestamp) {
-  try {
-    await User.findByIdAndUpdate(
-      userId,
-      { $inc: { singleLabInterpretationsRemaining: 1 }, updatedAt: new Date() }
-    );
-    console.log(`[${timestamp}] [${requestId}] Credit rollback successful for ${userId}.`);
-  } catch (rollbackError) {
-    console.error(`[${timestamp}] [${requestId}] CRITICAL: Credit rollback error:`, rollbackError);
-  }
-}
