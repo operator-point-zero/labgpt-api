@@ -6,19 +6,39 @@ const rateLimit = require('express-rate-limit');
 const authMiddleware = require('./middleware/authMiddleware');
 const url = require('url');
 const cookieParser = require('cookie-parser');
+const logger = require('./services/logger');
 
 module.exports = (app) => {
   // Enable CORS for all routes
   app.use(cors());
   
-  // Parse JSON request bodies
-  app.use(bodyParser.json());
+  // Parse JSON request bodies with increased limit for encrypted data
+  app.use(bodyParser.json({ limit: '10mb' }));
+  // Parse URL-encoded bodies
+  app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
   // Parse cookies for refresh token handling
   app.use(cookieParser());
   
-  // Log HTTP requests
+  // Log HTTP requests with Morgan (to console and file)
   if (process.env.NODE_ENV !== 'test') {
+    // Custom morgan format that logs to file
+    morgan.token('body', (req) => {
+      if (req.method === 'POST' || req.method === 'PUT') {
+        return JSON.stringify(req.body).substring(0, 100); // First 100 chars
+      }
+      return '';
+    });
+    
     app.use(morgan('dev'));
+    // Also log to file using custom middleware
+    app.use((req, res, next) => {
+      const start = Date.now();
+      res.on('finish', () => {
+        const duration = Date.now() - start;
+        logger.request(req.method, req.originalUrl, res.statusCode, `${duration}ms`);
+      });
+      next();
+    });
   }
   
   // Add request timestamp
@@ -54,12 +74,20 @@ module.exports = (app) => {
     return authMiddleware(req, res, next);
   });
   
-  // Error handling middleware
+  // Error handling middleware - logs errors to file
   app.use((err, req, res, next) => {
-    console.error('Global error handler:', err);
+    logger.error('Unhandled error', {
+      message: err.message,
+      stack: err.stack,
+      url: req.originalUrl,
+      method: req.method,
+      ip: req.ip
+    });
+    
     res.status(500).json({
       error: 'Internal server error',
-      message: err.message
+      message: err.message,
+      requestId: req.requestId || 'unknown'
     });
   });
 };

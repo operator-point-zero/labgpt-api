@@ -4,6 +4,9 @@ const connectDB = require('./services/db');
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Import logger first
+const logger = require('./services/logger');
+
 // Connect to MongoDB
 connectDB();
 
@@ -104,6 +107,61 @@ app.use('/api/auth', authRoutes);
 
 // Public health routes
 app.use('/api/health', healthRoutes);
+
+// ============================================================================
+// LOGGING ENDPOINTS (NO AUTH) - For debugging
+// ============================================================================
+
+// Get today's logs
+app.get('/api/logs', (req, res) => {
+  try {
+    const logs = logger.getLogContents();
+    res.header('Content-Type', 'text/plain');
+    res.send(logs);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to retrieve logs', message: err.message });
+  }
+});
+
+// Get last N lines from logs
+app.get('/api/logs/tail/:lines?', (req, res) => {
+  try {
+    const lines = parseInt(req.params.lines) || 100;
+    const logs = logger.getLastLines(Math.min(lines, 500)); // Max 500 lines
+    res.header('Content-Type', 'text/plain');
+    res.send(logs);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to retrieve logs', message: err.message });
+  }
+});
+
+// List all log files
+app.get('/api/logs/files', (req, res) => {
+  try {
+    const files = logger.getAllLogFiles();
+    res.json({
+      count: files.length,
+      files: files.map(f => ({
+        name: f.name,
+        created: f.created,
+        size: require('fs').statSync(f.path).size
+      }))
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to list log files', message: err.message });
+  }
+});
+
+// Get specific log file
+app.get('/api/logs/file/:filename', (req, res) => {
+  try {
+    const logs = logger.getLogFile(req.params.filename);
+    res.header('Content-Type', 'text/plain');
+    res.send(logs);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to retrieve log file', message: err.message });
+  }
+});
 
 // ============================================================================
 // PROTECTED ROUTES (AUTH REQUIRED) - AFTER authMiddleware

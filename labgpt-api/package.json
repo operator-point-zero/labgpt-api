@@ -5,7 +5,9 @@
     "main": "server.js",
     "scripts": {
         "start": "node server.js",
-        "dev": "nodemon server.js"
+        "dev": "nodemon server.js",
+        "logs": "tail -f logs/app-$(date +\\%Y-\\%m-\\%d).log",
+        "logs:list": "ls -lh logs/*.log"
     },
     "dependencies": {
         "body-parser": "^1.20.3",

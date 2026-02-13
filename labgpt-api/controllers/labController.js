@@ -915,39 +915,92 @@ function canProceedWithInterpretation(user) {
 function validateInput(body) {
   const { encryptedLabText, clientId, user_id } = body;
   
-  // DEBUG: Log incoming user_id details
-  console.log('[VALIDATION DEBUG] user_id received:', {
+  // DEBUG: Comprehensive logging of entire body and fields
+  console.log('═══════════════════════════════════════════════════════════');
+  console.log('[VALIDATION DEBUG] ===== FULL REQUEST BODY RECEIVED =====');
+  console.log('Raw body:', JSON.stringify(body, null, 2));
+  console.log('Body keys:', Object.keys(body || {}));
+  console.log('Body type:', typeof body);
+  console.log('═══════════════════════════════════════════════════════════');
+  
+  // DEBUG: Log each field
+  console.log('[VALIDATION DEBUG] encryptedLabText:', {
+    value: encryptedLabText ? encryptedLabText.substring(0, 50) + '...' : 'MISSING/NULL',
+    type: typeof encryptedLabText,
+    length: typeof encryptedLabText === 'string' ? encryptedLabText.length : 'N/A',
+    isString: typeof encryptedLabText === 'string',
+    isEmpty: !encryptedLabText,
+  });
+  
+  console.log('[VALIDATION DEBUG] clientId:', {
+    value: clientId,
+    type: typeof clientId,
+    length: typeof clientId === 'string' ? clientId.length : 'N/A',
+    isString: typeof clientId === 'string',
+    isEmpty: !clientId,
+  });
+  
+  console.log('[VALIDATION DEBUG] user_id:', {
     value: user_id,
     type: typeof user_id,
     length: typeof user_id === 'string' ? user_id.length : 'N/A',
     isString: typeof user_id === 'string',
+    isEmpty: !user_id,
     charCodes: typeof user_id === 'string' ? user_id.split('').map((char, i) => `${i}:${char}(${char.charCodeAt(0)})`).join(', ') : 'N/A',
     hexRegexMatch: typeof user_id === 'string' ? /^[0-9a-fA-F]{24}$/.test(user_id) : false,
   });
   
-  if (!encryptedLabText || typeof encryptedLabText !== 'string') {
-    return { valid: false, error: 'encryptedLabText is required and must be a string' };
+  console.log('═══════════════════════════════════════════════════════════');
+  
+  // Validation checks with specific error reasons
+  if (!encryptedLabText) {
+    console.error('[VALIDATION FAILED] encryptedLabText is missing or null');
+    return { valid: false, error: 'encryptedLabText is required' };
   }
   
-  if (!clientId || typeof clientId !== 'string' || clientId.length < 8) {
-    return { valid: false, error: 'clientId is required and must be at least 8 characters' };
+  if (typeof encryptedLabText !== 'string') {
+    console.error('[VALIDATION FAILED] encryptedLabText is not a string, got:', typeof encryptedLabText);
+    return { valid: false, error: 'encryptedLabText must be a string' };
   }
   
-  if (!user_id || typeof user_id !== 'string') {
-    return { valid: false, error: 'user_id is required and must be a string' };
+  if (!clientId) {
+    console.error('[VALIDATION FAILED] clientId is missing or null');
+    return { valid: false, error: 'clientId is required' };
+  }
+  
+  if (typeof clientId !== 'string') {
+    console.error('[VALIDATION FAILED] clientId is not a string, got:', typeof clientId);
+    return { valid: false, error: 'clientId must be a string' };
+  }
+  
+  if (clientId.length < 8) {
+    console.error('[VALIDATION FAILED] clientId too short:', clientId.length, 'chars');
+    return { valid: false, error: 'clientId must be at least 8 characters' };
+  }
+  
+  if (!user_id) {
+    console.error('[VALIDATION FAILED] user_id is missing or null');
+    return { valid: false, error: 'user_id is required' };
+  }
+  
+  if (typeof user_id !== 'string') {
+    console.error('[VALIDATION FAILED] user_id is not a string, got:', typeof user_id);
+    return { valid: false, error: 'user_id must be a string' };
   }
   
   // Validate MongoDB ObjectId format (24 hex characters)
   if (!/^[0-9a-fA-F]{24}$/.test(user_id)) {
-    console.log('[VALIDATION ERROR] user_id does not match ObjectId format:', user_id);
-    return { valid: false, error: 'user_id must be a valid MongoDB ObjectId' };
+    console.error('[VALIDATION FAILED] user_id does not match ObjectId format:', user_id, '(length:', user_id.length, ')');
+    return { valid: false, error: 'user_id must be a valid MongoDB ObjectId (24 hex characters)' };
   }
   
   // Check size limit to prevent DoS
   if (encryptedLabText.length > MAX_ENCRYPTED_SIZE) {
+    console.error('[VALIDATION FAILED] encryptedLabText exceeds size limit:', encryptedLabText.length, '>', MAX_ENCRYPTED_SIZE);
     return { valid: false, error: 'Encrypted data exceeds maximum allowed size (5MB)' };
   }
   
+  console.log('[VALIDATION SUCCESS] All checks passed');
   return { valid: true };
 }
 
@@ -968,18 +1021,41 @@ exports.interpretLabResults = async (req, res) => {
   const requestId = crypto.randomBytes(8).toString('hex');
   
   try {
+    // ───────────────────────────────────────────────────────────────────────────
+    // INITIAL REQUEST LOGGING - Log EVERYTHING before processing
+    // ───────────────────────────────────────────────────────────────────────────
+    console.log('\n╔════════════════════════════════════════════════════════════════╗');
+    console.log('║  POST /api/labs - NEW REQUEST RECEIVED                          ║');
+    console.log('╚════════════════════════════════════════════════════════════════╝');
+    
+    console.log(`[${requestTimestamp}] [${requestId}] Request headers:`, JSON.stringify(req.headers, null, 2));
+    console.log(`[${requestTimestamp}] [${requestId}] Request body type:`, typeof req.body);
+    console.log(`[${requestTimestamp}] [${requestId}] Request body is null?`, req.body === null);
+    console.log(`[${requestTimestamp}] [${requestId}] Request body is undefined?`, req.body === undefined);
+    console.log(`[${requestTimestamp}] [${requestId}] Request body keys:`, Object.keys(req.body || {}));
+    console.log(`[${requestTimestamp}] [${requestId}] Request body (full):`, JSON.stringify(req.body, null, 2));
+    
     const { encryptedLabText, clientId, testType: clientReportedTestType, user_id } = req.body;
 
     console.log(`[${requestTimestamp}] [${requestId}] New interpretation request`);
+    console.log(`[${requestTimestamp}] [${requestId}] Destructured values:`, {
+      encryptedLabText: encryptedLabText ? encryptedLabText.substring(0, 50) + '...' : 'UNDEFINED/NULL',
+      clientId,
+      clientReportedTestType,
+      user_id
+    });
 
     // ── 1. Input Validation ─────────────────────────────────────────────────
     const validation = validateInput(req.body);
     if (!validation.valid) {
-      console.log(`[${requestTimestamp}] [${requestId}] Validation failed: ${validation.error}`);
+      console.error(`[${requestTimestamp}] [${requestId}] ❌ VALIDATION FAILED: ${validation.error}`);
+      console.error(`[${requestTimestamp}] [${requestId}] Request body was:`, JSON.stringify(req.body || {}, null, 2));
       return res.status(400).json({
         success: false,
         message: 'Invalid request data. Please check your input and try again.',
         error: validation.error,
+        requestId: requestId,
+        timestamp: requestTimestamp
       });
     }
 
