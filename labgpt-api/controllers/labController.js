@@ -915,6 +915,16 @@ function canProceedWithInterpretation(user) {
 function validateInput(body) {
   const { encryptedLabText, clientId, user_id } = body;
   
+  // DEBUG: Log incoming user_id details
+  console.log('[VALIDATION DEBUG] user_id received:', {
+    value: user_id,
+    type: typeof user_id,
+    length: typeof user_id === 'string' ? user_id.length : 'N/A',
+    isString: typeof user_id === 'string',
+    charCodes: typeof user_id === 'string' ? user_id.split('').map((char, i) => `${i}:${char}(${char.charCodeAt(0)})`).join(', ') : 'N/A',
+    hexRegexMatch: typeof user_id === 'string' ? /^[0-9a-fA-F]{24}$/.test(user_id) : false,
+  });
+  
   if (!encryptedLabText || typeof encryptedLabText !== 'string') {
     return { valid: false, error: 'encryptedLabText is required and must be a string' };
   }
@@ -929,6 +939,7 @@ function validateInput(body) {
   
   // Validate MongoDB ObjectId format (24 hex characters)
   if (!/^[0-9a-fA-F]{24}$/.test(user_id)) {
+    console.log('[VALIDATION ERROR] user_id does not match ObjectId format:', user_id);
     return { valid: false, error: 'user_id must be a valid MongoDB ObjectId' };
   }
   
