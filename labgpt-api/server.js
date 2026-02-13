@@ -30,7 +30,7 @@ app.get('/ping', (req, res) => {
   res.status(200).json({ 
     status: 'ok', 
     timestamp: new Date().toISOString(),
-    message: '🧪 LabGPT API is alive!' 
+    message: '🧪 LabGPT API is alive yaaay!' 
   });
 });
 
