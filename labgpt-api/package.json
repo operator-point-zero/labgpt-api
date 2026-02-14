@@ -1,7 +1,7 @@
 {
     "name": "medical-lab-interpreter",
     "version": "1.0.0",
-    "description": "API to interpret medical lab results using OpenAI",
+    "description": "API to interpret medical lab results using OpenAI/gemini",
     "main": "server.js",
     "scripts": {
         "start": "node server.js",
