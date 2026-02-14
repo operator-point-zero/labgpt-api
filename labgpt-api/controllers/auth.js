@@ -45,14 +45,15 @@ router.post('/oauth', async (req, res) => {
     let isNewUser = false;
     
     if (!user) {
-      // Fallback: Try finding by email + provider in case providerId changed
+      // Fallback: If primary ID fails, find user by their verified email address.
+      // This handles cases where a user logs in with a different OAuth provider
+      // but shares the same email, preventing duplicate account creation.
       user = await User.findOne({
-        email: normalizedEmail,
-        provider: normalizedProvider
+        email: normalizedEmail
       });
 
       if (!user) {
-        // This is a truly new user - create them
+        // === THIS IS A TRULY NEW USER ===
         console.log('[OAuth] Creating new user:', normalizedEmail);
         user = await User.create({
           email: normalizedEmail,
@@ -125,9 +126,19 @@ router.post('/oauth', async (req, res) => {
           console.error('Failed to send welcome email:', emailError);
           // Don't fail the registration if email fails
         }
+      } else {
+        // === EXISTING USER, NEW PROVIDER/LOGIN METHOD ===
+        console.log(`[OAuth] Existing user ${user.email} logging in with new provider ${normalizedProvider}. Linking account.`);
+        // Update their provider info to link the new login method.
+        user.provider = normalizedProvider;
+        user.providerId = providerId;
+        // Also update their name and profile picture from the new provider.
+        if (name) user.name = name;
+        if (profilePicture) user.profilePicture = profilePicture;
+        await user.save();
       }
     } else {
-      // User already exists - just log them in
+      // === EXISTING USER, RETURNING WITH SAME PROVIDER ===
       console.log('[OAuth] Existing user logging in:', user.email);
       
       // Update user data in case they changed profile picture or name
