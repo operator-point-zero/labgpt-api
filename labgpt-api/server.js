@@ -15,7 +15,6 @@ const middleware = require('./middleware');
 const authMiddleware = require('./middleware/authMiddleware');
 
 // Import routes
-const labRoutes = require('./routes/labRoutes');
 const healthRoutes = require('./routes/healthRoutes');
 const authRoutes = require('./controllers/auth');
 const feedbackRoutes = require('./controllers/feedback'); 
@@ -171,7 +170,6 @@ app.get('/api/logs/file/:filename', (req, res) => {
 app.use(authMiddleware);
 
 // Protected routes - these require authentication
-app.use('/api/labs', labRoutes);
 app.use('/api/feedback', feedbackRoutes);
 app.use('/api/purchases', purchaseRoutes);
 app.use('/api/checkStatus', checkSubscription);
@@ -179,11 +177,6 @@ app.use('/api/checkStatus', checkSubscription);
 // ============================================================================
 // BACKWARD COMPATIBILITY
 // ============================================================================
-
-app.use('/interpret', (req, res, next) => {
-  req.url = req.url.replace('/interpret', '/api/labs');
-  labRoutes(req, res, next);
-});
 
 app.use('/health', (req, res, next) => {
   req.url = req.url.replace('/health', '/api/health');

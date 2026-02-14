@@ -2,6 +2,9 @@ const express = require('express');
 const router = express.Router();
 const User = require('../models/user');
 
+const crypto = require('crypto');
+const { interpretLabText } = require('../services/openaiService');
+
 /**
  * Checks user's subscription status and lab interpretation credits
  * @param {string} userId - The user ID to check
@@ -24,89 +27,22 @@ async function checkUserSubscriptionStatus(userId) {
     let subscriptionExpired = false;
     let subscriptionActive = false;
 
-    console.log('=== SUBSCRIPTION CHECK DEBUG ===');
-    console.log('User ID:', userId);
-    console.log('Current date:', currentDate.toISOString());
-    console.log('User subscription object:', JSON.stringify(user.subscription, null, 2));
-    console.log('Lab credits remaining:', user.singleLabInterpretationsRemaining);
-
-    // Check if subscription exists
-    if (user.subscription) {
-      console.log('Subscription object found');
-
-      // Check expiry date FIRST (priority over isSubscribed flag)
-      if (user.subscription.expiryDate) {
-        // Handle both Date objects and timestamp numbers
-        let expiryDate;
-        if (typeof user.subscription.expiryDate === 'number') {
-          expiryDate = new Date(user.subscription.expiryDate);
-        } else if (user.subscription.expiryDate.$date) {
-          // Handle MongoDB date format
-          expiryDate = new Date(
-            user.subscription.expiryDate.$date.$numberLong ?
-              parseInt(user.subscription.expiryDate.$date.$numberLong) :
-              user.subscription.expiryDate.$date
-          );
-        } else {
-          expiryDate = new Date(user.subscription.expiryDate);
-        }
-
-        console.log('Parsed expiry date:', expiryDate.toISOString());
-        console.log('Current > Expiry?', currentDate > expiryDate);
-
-        if (currentDate > expiryDate) {
-          // Subscription has expired
-          console.log('❌ Subscription EXPIRED');
-          subscriptionExpired = true;
-          subscriptionActive = false;
-
-          // Update the user record to reflect expired status
-          if (user.subscription.isSubscribed === true) {
-            user.subscription.isSubscribed = false;
-            await user.save();
-            console.log('Updated user record: set isSubscribed to false');
-          }
-        } else {
-          // Subscription has NOT expired - it's active!
-          console.log('✅ Subscription is ACTIVE (not expired)');
-          subscriptionActive = true;
-
-          // Update the user record to reflect active status if needed
-          if (user.subscription.isSubscribed === false) {
-            user.subscription.isSubscribed = true;
-            await user.save();
-            console.log('Updated user record: set isSubscribed to true');
-          }
-        }
+    // Simplified subscription check logic
+    if (user.subscription && user.subscription.expiryDate) {
+      const expiryDate = new Date(user.subscription.expiryDate);
+      if (currentDate <= expiryDate) {
+        subscriptionActive = true;
       } else {
-        // No expiry date - fall back to isSubscribed flag
-        console.log('No expiry date found, checking isSubscribed flag');
-        if (user.subscription.isSubscribed === true) {
-          console.log('✅ Subscription ACTIVE (isSubscribed = true)');
-          subscriptionActive = true;
-        } else {
-          console.log('❌ Subscription not active (isSubscribed = false)');
-          subscriptionActive = false;
-        }
+        subscriptionExpired = true;
       }
-    } else {
-      console.log('❌ No subscription object found');
+    } else if (user.subscription && user.subscription.isSubscribed) {
+      subscriptionActive = true;
     }
-
-    // Check single lab interpretation credits
+    
     const hasLabCredits = user.singleLabInterpretationsRemaining > 0;
-
-    console.log('📊 FINAL STATUS:');
-    console.log('Subscription active:', subscriptionActive);
-    console.log('Has lab credits:', hasLabCredits);
-    console.log('Credits remaining:', user.singleLabInterpretationsRemaining);
-
-    // Determine if user can proceed
     const canProceed = subscriptionActive || hasLabCredits;
-    console.log('🚀 Can proceed:', canProceed);
 
-    // Prepare response based on user's access status
-    let response = {
+    return {
       success: true,
       canProceed: canProceed,
       statusCode: canProceed ? 200 : 403,
@@ -115,38 +51,14 @@ async function checkUserSubscriptionStatus(userId) {
         subscription: {
           isActive: subscriptionActive,
           hasExpired: subscriptionExpired,
-          expiryDate: user.subscription?.expiryDate || null,
-          packageType: user.subscription?.packageType || null,
-          startDate: user.subscription?.startDate || null
         },
         labCredits: {
           remaining: user.singleLabInterpretationsRemaining,
           hasCredits: hasLabCredits
         }
-      }
+      },
+      message: canProceed ? 'User can proceed.' : 'Access denied.'
     };
-
-    // Set appropriate message based on access status
-    if (canProceed) {
-      if (subscriptionActive && hasLabCredits) {
-        response.message = 'User can proceed - has active subscription and lab credits.';
-      } else if (subscriptionActive) {
-        response.message = 'User can proceed - has active subscription.';
-      } else if (hasLabCredits) {
-        response.message = 'User can proceed - has lab interpretation credits.';
-      }
-    } else {
-      if (subscriptionExpired) {
-        response.message = 'Access denied - subscription has expired and no lab credits remaining.';
-      } else {
-        response.message = 'Access denied - no active subscription and no lab credits remaining.';
-      }
-      response.statusCode = 403; // Forbidden
-    }
-
-    console.log('📤 RESPONSE BEING RETURNED:', JSON.stringify(response, null, 2));
-    console.log('=== END DEBUG ===');
-    return response;
 
   } catch (error) {
     console.error('Error checking user subscription status:', error);
@@ -159,31 +71,17 @@ async function checkUserSubscriptionStatus(userId) {
   }
 }
 
-// Route to check user's subscription status
-router.get('/check-subscription-status/:userId', async (req, res) => {
-  const { userId } = req.params;
-
-  if (!userId) {
-    return res.status(400).json({ message: 'User ID is required.' });
-  }
-
-  const statusCheck = await checkUserSubscriptionStatus(userId);
-  return res.status(statusCheck.statusCode).json(statusCheck);
-});
+const Test = require('../models/test');
 
 // Route for lab interpretation that checks access first
 router.post('/lab-interpretation', async (req, res) => {
-  const { userId, labData } = req.body;
+  const { userId, labData, testType: clientReportedTestType } = req.body;
+  const requestId = crypto.randomBytes(8).toString('hex');
 
-  if (!userId) {
-    return res.status(400).json({ message: 'User ID is required.' });
+  if (!userId || !labData) {
+    return res.status(400).json({ message: 'User ID and lab data are required.' });
   }
 
-  if (!labData) {
-    return res.status(400).json({ message: 'Lab data is required.' });
-  }
-
-  // Check if user can proceed
   const statusCheck = await checkUserSubscriptionStatus(userId);
 
   if (!statusCheck.canProceed) {
@@ -193,37 +91,64 @@ router.post('/lab-interpretation', async (req, res) => {
     });
   }
 
-  // User can proceed - continue with lab interpretation logic
+  let user;
   try {
-    // If using a single lab credit (not subscription), deduct it
-    if (!statusCheck.userStatus.subscription.isActive && statusCheck.userStatus.labCredits.hasCredits) {
-      const user = await User.findById(userId);
-      user.singleLabInterpretationsRemaining -= 1;
-      await user.save();
-
-      console.log(`Lab credit consumed for user ${userId}. Remaining credits: ${user.singleLabInterpretationsRemaining}`);
+    user = await User.findById(userId);
+    if (!user) {
+        return res.status(404).json({ success: false, message: 'User not found.' });
     }
 
-    // Your lab interpretation logic here...
-    const interpretationResult = {
-      interpretationId: `interp_${Date.now()}`,
-      userId: userId,
-      processedAt: new Date(),
-      results: {
-        status: 'completed',
-        data: labData
-      }
-    };
+    // Deduct credit if not on an active subscription
+    if (!statusCheck.userStatus.subscription.isActive && statusCheck.userStatus.labCredits.hasCredits) {
+      user = await User.findByIdAndUpdate(userId, { $inc: { singleLabInterpretationsRemaining: -1 } }, { new: true });
+      console.log(`Lab credit consumed for user ${userId}. Remaining: ${user.singleLabInterpretationsRemaining}`);
+    }
+    
+    // Call the actual AI interpretation service
+    const interpretationResult = await interpretLabText(labData, requestId);
+    
+    // Save to history for analytics (non-fatal)
+    try {
+        await Test.create({ 
+            testType: interpretationResult.testType, 
+            userId: userId,
+            requestId 
+        });
+    } catch (e) { 
+        console.error(`[${requestId}] Analytics history log failed:`, e); 
+    }
 
+    // Respond with the structured interpretation
     res.status(200).json({
+      success: true,
       message: 'Lab interpretation completed successfully.',
-      interpretation: interpretationResult,
-      userStatus: statusCheck.userStatus
+      testType: interpretationResult.testType,
+      interpretation: JSON.stringify(interpretationResult.structuredReport),
+      isValidTest: interpretationResult.isValidTest,
+      requestId: requestId,
+      usage: {
+        creditsRemaining: user.singleLabInterpretationsRemaining
+      }
     });
 
   } catch (error) {
-    console.error('Error processing lab interpretation:', error);
-    res.status(500).json({ message: 'Server error during lab interpretation.' });
+    console.error(`[${requestId}] Error processing lab interpretation:`, error);
+    
+    // Attempt to roll back credit on failure
+    if (!statusCheck.userStatus.subscription.isActive && statusCheck.userStatus.labCredits.hasCredits) {
+        try {
+            await User.findByIdAndUpdate(userId, { $inc: { singleLabInterpretationsRemaining: 1 } });
+            console.log(`[${requestId}] Credit rolled back for user ${userId}.`);
+        } catch (rollbackError) {
+            console.error(`[${requestId}] CRITICAL: Failed to roll back credit for user ${userId}:`, rollbackError);
+        }
+    }
+    
+    res.status(500).json({ 
+        success: false,
+        message: 'Server error during lab interpretation.',
+        error: error.message 
+    });
   }
 });
 
